@@ -24,29 +24,20 @@ options{
 	language=Python3;
 }
 
-program  : decl+ EOF ;
+program  : EOF ;
 
-decl: funcdecl | vardecl  ;
+REAL_LITERAL
+  : DIGIT+ '.' DIGIT+ ( [eE] [+-]? DIGIT+ )?
+  | DIGIT+ [eE] [+-]? DIGIT+
+  ;
 
-vardecl: 'var' ID 'int' ('=' exp)? ';' ;
+ID : [a-df-z] [a-z0-9]* ; // loại trừ 'e' đầu để tránh nhầm lẫn với scientific notation
 
-funcdecl: 'func' ID '(' ')' block ';' ;
+fragment DIGIT : [0-9] ;
 
-block : '{' stmt+  '}' ;
-
-stmt: funcall | vardecl;
-
-funcall: ID '(' exp ')' ';' ;
-
-exp:  ID | INTLIT | FLOATLIT;
-
-ID: [a-zA-Z]+;
-
-INTLIT: [0-9]+;
-
-FLOATLIT: [0-9]+ '.' [0-9]+;
-
-NL: '\n' -> skip; //skip newlines
+STRING_LITERAL
+  : '\'' ( '\'\'' | ~[\r\n'] )* '\''
+  ;
 
 WS : [ \t\r]+ -> skip ; // skip spaces, tabs 
 
