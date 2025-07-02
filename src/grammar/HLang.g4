@@ -31,7 +31,7 @@ options {
 
 //------------------Parser------------------
 
-program: decl* EOF;
+program: constdecl* funcdecl* EOF;
 
 decl: constdecl | funcdecl;
 
