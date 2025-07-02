@@ -81,7 +81,12 @@ for_stmt: FOR LP ID IN expr RP body;
 while_stmt: WHILE LP expr RP body;
 
 if_stmt
-    : IF LP expr RP body (ELSE body)?
+    : IF LP expr RP body (ELSE else_stmt)?
+    ;
+
+else_stmt
+    : if_stmt
+    | body
     ;
 
 assignment: lhs ASSIGN expr SEMICOLON;
