@@ -8,32 +8,30 @@ from lexererr import *
 def emit(self):
     tk = self.type
     if tk == self.UNCLOSE_STRING:
-        result = super().emit();
-        if len(self.text) >= 2 and self.text[-1] == '\n' and self.text[-2] == '\r':
-            raise UncloseString(result.text[1:-2])
-        elif self.text[-1] == '\n' or self.text[-1] == '\r':
-            raise UncloseString(result.text[1:-1])
+        result = super().emit()
+        if self.text.endswith('\r\n'):
+            raise UncloseString(self.text[1:-2])
+        elif self.text.endswith('\n') or self.text.endswith('\r'):
+            raise UncloseString(self.text[1:-1])
         else:
-            raise UncloseString(result.text[1:])
+            raise UncloseString(self.text[1:])
     elif tk == self.ILLEGAL_ESCAPE:
-        result = super().emit();
-        raise IllegalEscape(result.text[1:]) 
+        result = super().emit()
+        raise IllegalEscape(result.text[1:])
     elif tk == self.ERROR_CHAR:
-        result = super().emit();
+        result = super().emit()
         raise ErrorToken(result.text)
     else:
-        return super().emit();
+        return super().emit()
 }
 
 options {
     language=Python3;
 }
 
-//------------------Parser------------------
+// ------------------ Parser ------------------
 
 program: constdecl* funcdecl* EOF;
-
-decl: constdecl | funcdecl;
 
 constdecl: CONST ID (COLON var_type)? ASSIGN expr SEMICOLON;
 
@@ -80,14 +78,9 @@ for_stmt: FOR LP ID IN expr RP body;
 
 while_stmt: WHILE LP expr RP body;
 
-if_stmt
-    : IF LP expr RP body (ELSE else_stmt)?
-    ;
+if_stmt: IF LP expr RP body (ELSE else_stmt)?;
 
-else_stmt
-    : if_stmt
-    | body
-    ;
+else_stmt: if_stmt | body;
 
 assignment: lhs ASSIGN expr SEMICOLON;
 
@@ -99,51 +92,27 @@ returnstmt: RETURN expr? SEMICOLON;
 
 exprstmt: expr SEMICOLON;
 
+// ------------------ Expressions ------------------
+
 expr: expr1;
 
-expr1
-    : expr1 OR expr2         # OrExpr
-    | expr2                  # SingleOr
-    ;
+expr1: expr1 OR expr2 | expr2;
 
-expr2
-    : expr2 AND expr3        # AndExpr
-    | expr3                  # SingleAnd
-    ;
+expr2: expr2 AND expr3 | expr3;
 
-expr3
-    : expr3 (EQUAL | UNEQUAL) expr4   # EqualityExpr
-    | expr4                           # SingleEquality
-    ;
+expr3: expr3 (EQUAL | UNEQUAL) expr4 | expr4;
 
-expr4
-    : expr4 (LT | LTE | GT | GTE) expr5   # RelationalExpr
-    | expr5                               # SingleRelational
-    ;
+expr4: expr4 (LT | LTE | GT | GTE) expr5 | expr5;
 
-expr5
-    : expr5 (ADD | SUB) expr6       # AdditiveExpr
-    | expr6                         # SingleAdditive
-    ;
+expr5: expr5 (ADD | SUB) expr6 | expr6;
 
-expr6
-    : expr6 (MUL | DIV | MOD) expr7   # MultiplicativeExpr
-    | expr7                           # SingleMultiplicative
-    ;
+expr6: expr6 (MUL | DIV | MOD) expr7 | expr7;
 
-expr7
-    : expr7 PIPELINE expr8      # PipelineExpr
-    | expr8                     # SinglePipeline
-    ;
+expr7: expr7 PIPELINE expr8 | expr8;
 
-expr8
-    : (NOT | SUB | ADD) expr8   # UnaryExpr
-    | expr9                     # SinglePostfix
-    ;
+expr8: (NOT | SUB | ADD) expr8 | expr9;
 
-expr9
-    : primary_expr (LSP expr RSP)*   # PostfixExpr
-    ;
+expr9: primary_expr (LSP expr RSP)*;
 
 primary_expr
     : INT_LIT
@@ -152,18 +121,24 @@ primary_expr
     | TRUE
     | FALSE
     | array_lit
+    | type_conversion_call
     | callexpr
     | ID
     | LP expr RP
     ;
 
-callexpr: callee LP exprlist RP;
-callee: ID | builtin_func;
-builtin_func: INT | FLOAT | STRING;
+type_conversion_call
+    : INT LP exprlist RP
+    | FLOAT LP exprlist RP
+    | STR LP exprlist RP
+    ;
+
+
+callexpr: ID LP exprlist RP;
 array_lit: LSP exprlist RSP;
 exprlist: expr (COMMA expr)* | ;
 
-//------------------Lexer------------------
+// ------------------ Lexer ------------------
 
 // Keywords
 BOOL: 'bool';
@@ -181,6 +156,7 @@ INT: 'int';
 LET: 'let';
 RETURN: 'return';
 STRING: 'string';
+STR: 'str';
 TRUE: 'true';
 VOID: 'void';
 WHILE: 'while';
