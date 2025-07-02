@@ -61,11 +61,20 @@ stmt
     | assignment
     | callstmt
     | returnstmt
+    | breakstmt
+    | continuestmt
     | if_stmt
     | while_stmt
     | for_stmt
     | exprstmt
+    | blockstmt
     ;
+
+breakstmt: BREAK SEMICOLON;
+
+continuestmt: CONTINUE SEMICOLON;
+
+blockstmt: LCP stmt* RCP;
 
 for_stmt: FOR LP ID IN expr RP body;
 
