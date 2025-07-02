@@ -75,7 +75,9 @@ if_stmt
     : IF LP expr RP body (ELSE body)?
     ;
 
-assignment: postfix_expr ASSIGN expr SEMICOLON;
+assignment: lhs ASSIGN expr SEMICOLON;
+
+lhs: ID (LSP expr RSP)*;
 
 callstmt: callexpr SEMICOLON;
 
@@ -83,28 +85,51 @@ returnstmt: RETURN expr? SEMICOLON;
 
 exprstmt: expr SEMICOLON;
 
-exprlist: expr (COMMA expr)*;
+expr: expr1;
 
-array_lit: LSP exprlist? RSP;
+expr1
+    : expr1 OR expr2         # OrExpr
+    | expr2                  # SingleOr
+    ;
 
-// Expressions
-expr: expr1 (PIPELINE expr1)*;
+expr2
+    : expr2 AND expr3        # AndExpr
+    | expr3                  # SingleAnd
+    ;
 
-expr1: expr2 (OR expr2)*;
+expr3
+    : expr3 (EQUAL | UNEQUAL) expr4   # EqualityExpr
+    | expr4                           # SingleEquality
+    ;
 
-expr2: expr3 (AND expr3)*;
+expr4
+    : expr4 (LT | LTE | GT | GTE) expr5   # RelationalExpr
+    | expr5                               # SingleRelational
+    ;
 
-expr3: expr4 ((EQUAL | UNEQUAL | LT | LTE | GT | GTE) expr4)*;
+expr5
+    : expr5 (ADD | SUB) expr6       # AdditiveExpr
+    | expr6                         # SingleAdditive
+    ;
 
-expr4: expr5 ((ADD | SUB) expr5)*;
+expr6
+    : expr6 (MUL | DIV | MOD) expr7   # MultiplicativeExpr
+    | expr7                           # SingleMultiplicative
+    ;
 
-expr5: expr6 ((MUL | DIV | MOD) expr6)*;
+expr7
+    : expr7 PIPELINE expr8      # PipelineExpr
+    | expr8                     # SinglePipeline
+    ;
 
-expr6: unary_expr | postfix_expr;
+expr8
+    : (NOT | SUB | ADD) expr8   # UnaryExpr
+    | expr9                     # SinglePostfix
+    ;
 
-unary_expr: (ADD | SUB | NOT) expr6;
-
-postfix_expr: primary_expr (LSP expr RSP)*;
+expr9
+    : primary_expr (LSP expr RSP)*   # PostfixExpr
+    ;
 
 primary_expr
     : INT_LIT
@@ -112,15 +137,17 @@ primary_expr
     | STRING_LIT
     | TRUE
     | FALSE
-    | ID
-    | callexpr
-    | subexpr
     | array_lit
+    | callexpr
+    | ID
+    | LP expr RP
     ;
 
-callexpr: (ID | INT | FLOAT | BOOL | STRING) LP exprlist? RP;
-
-subexpr: LP expr RP;
+callexpr: callee LP exprlist RP;
+callee: ID | builtin_func;
+builtin_func: INT | FLOAT | STRING;
+array_lit: LSP exprlist RSP;
+exprlist: expr (COMMA expr)* | ;
 
 //------------------Lexer------------------
 
