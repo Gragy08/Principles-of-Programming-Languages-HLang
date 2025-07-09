@@ -34,22 +34,20 @@ options {
 program: constdecl* funcdecl* EOF;
 
 constdecl: CONST ID (COLON var_type)? ASSIGN expr SEMICOLON;
-
 vardecl: LET ID (COLON var_type)? ASSIGN expr SEMICOLON;
-
 funcdecl: FUNC ID paramdecl ARROW ret_type body;
 
 var_type: non_void_type;
 ret_type: non_void_type | VOID;
-
 non_void_type: INT | FLOAT | BOOL | STRING | array_type;
-
 array_type: LSP non_void_type SEMICOLON INT_LIT RSP;
 
-idlist: ID (COMMA ID)*;
+idlist: ID idlist_tail;
+idlist_tail: COMMA ID idlist_tail | ;
 
 paramdecl: LP paramlist? RP;
-paramlist: param (COMMA param)*;
+paramlist: param paramlist_tail;
+paramlist_tail: COMMA param paramlist_tail | ;
 param: ID COLON var_type;
 
 body: LCP stmt* RCP;
@@ -69,50 +67,34 @@ stmt
     ;
 
 breakstmt: BREAK SEMICOLON;
-
 continuestmt: CONTINUE SEMICOLON;
-
 blockstmt: LCP stmt* RCP;
-
 for_stmt: FOR LP ID IN expr RP body;
-
 while_stmt: WHILE LP expr RP body;
-
 if_stmt: IF LP expr RP body (ELSE else_stmt)?;
-
 else_stmt: if_stmt | body;
 
 assignment: lhs ASSIGN expr SEMICOLON;
 
-lhs: ID (LSP expr RSP)*;
+lhs: ID lhs_tail;
+lhs_tail: LSP expr RSP lhs_tail | ;
 
 callstmt: callexpr SEMICOLON;
-
 returnstmt: RETURN expr? SEMICOLON;
-
 exprstmt: expr SEMICOLON;
 
 // ------------------ Expressions ------------------
-
 expr: expr1;
-
 expr1: expr1 OR expr2 | expr2;
-
 expr2: expr2 AND expr3 | expr3;
-
 expr3: expr3 (EQUAL | UNEQUAL) expr4 | expr4;
-
 expr4: expr4 (LT | LTE | GT | GTE) expr5 | expr5;
-
 expr5: expr5 (ADD | SUB) expr6 | expr6;
-
 expr6: expr6 (MUL | DIV | MOD) expr7 | expr7;
-
 expr7: expr7 PIPELINE expr8 | expr8;
-
 expr8: (NOT | SUB | ADD) expr8 | expr9;
-
-expr9: primary_expr (LSP expr RSP)*;
+expr9: primary_expr expr9_tail;
+expr9_tail: LSP expr RSP expr9_tail | ;
 
 primary_expr
     : INT_LIT
@@ -128,15 +110,16 @@ primary_expr
     ;
 
 type_conversion_call
-    : INT LP exprlist RP
-    | FLOAT LP exprlist RP
-    | STR LP exprlist RP
+    : INT LP exprlist_opt RP
+    | FLOAT LP exprlist_opt RP
+    | STR LP exprlist_opt RP
     ;
 
-
-callexpr: ID LP exprlist RP;
-array_lit: LSP exprlist RSP;
-exprlist: expr (COMMA expr)* | ;
+callexpr: ID LP exprlist_opt RP ;
+array_lit: LSP exprlist_opt RSP ;
+exprlist_opt: exprlist | ;
+exprlist: expr exprlist_tail ;
+exprlist_tail: COMMA expr exprlist_tail | ;
 
 // ------------------ Lexer ------------------
 
@@ -211,23 +194,10 @@ COMMENT: '/*' (COMMENT | ~[*] | '*' ~[/])* '*/' -> skip;
 // Error Tokens
 UNCLOSE_STRING
     : '"' STRING_CHAR* ('\r\n' | '\n' | '\r' | EOF)
-    {
-        if self.text.endswith('\r\n'):
-            raise UncloseString(self.text[1:-2] + '\r\n')
-        elif self.text.endswith('\n'):
-            raise UncloseString(self.text[1:-1] + '\n')
-        elif self.text.endswith('\r'):
-            raise UncloseString(self.text[1:-1] + '\r')
-        else:
-            raise UncloseString(self.text[1:])
-    }
     ;
 
 ILLEGAL_ESCAPE
     : '"' (STRING_CHAR | '\\' ~[ntr"\\])* '\\' ~[ntr"\\]
-    {
-        raise IllegalEscape(self.text[1:])
-    }
     ;
 
-ERROR_CHAR: . {raise ErrorToken(self.text)};
+ERROR_CHAR: . ;

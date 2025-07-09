@@ -10,11 +10,125 @@ A comprehensive compiler implementation for HLang, a simple programming language
 
 This is a mini project for the **Principle of Programming Languages course (CO3005)** at Ho Chi Minh City University of Technology (VNU-HCM) that implements a compiler for **HLang**, a custom programming language designed for educational purposes.
 
+📋 **For detailed language specification, see [HLang Specification](hlang_specification.md)**
+
 The project demonstrates fundamental concepts of compiler construction including:
 - **Lexical Analysis**: Tokenization and error handling for invalid characters, unclosed strings, and illegal escape sequences
 - **Syntax Analysis**: Grammar-based parsing using ANTLR4 (ANother Tool for Language Recognition)
 - **Error Handling**: Comprehensive error reporting for both lexical and syntactic errors
 - **Testing Framework**: Automated testing with HTML report generation
+
+## Assignment 1 - Tokenizer and recognizer
+
+### Required Tasks to Complete
+
+1. **Read the language specification carefully**
+   - Study the detailed [HLang Specification](hlang_specification.md) document
+   - Understand the syntax and semantics of the HLang language
+   - Master the lexical and syntax rules
+
+2. **Implement the HLang.g4 file**
+   - Complete the ANTLR4 grammar file in `src/grammar/HLang.g4`
+   - Define lexical rules (tokens)
+   - Define parser rules (grammar rules)
+   - Handle precedence and associativity
+
+3. **Write 100 lexer tests and 100 parser tests**
+   - **100 test cases for lexer** in `tests/test_lexer.py`
+     - Test valid and invalid tokens
+     - Test error handling (unclosed strings, illegal escape sequences, etc.)
+     - Test edge cases and boundary conditions
+   - **100 test cases for parser** in `tests/test_parser.py`
+     - Test valid grammar structures
+     - Test syntax errors and error recovery
+     - Test nested structures and complex expressions
+
+### Lexical Error Handling Requirements
+
+For lexical errors, the lexer must return the following tokens with specific lexemes:
+
+- **ERROR_TOKEN** with `<unrecognized char>` lexeme: when the lexer detects an unrecognized character.
+
+- **UNCLOSE_STRING** with `<unclosed string>` lexeme: when the lexer detects an unterminated string. The `<unclosed string>` lexeme does not include the opening quote.
+
+- **ILLEGAL_ESCAPE** with `<wrong string>` lexeme: when the lexer detects an illegal escape in string. The wrong string is from the beginning of the string (without the opening quote) to the illegal escape.
+
+### Evaluation Criteria
+
+- **Grammar Implementation**: Accuracy and completeness of the `HLang.g4` file
+- **Test Coverage**: Quantity and quality of test cases (200 tests total)
+- **Error Handling**: Capability to handle lexical and syntax errors
+
+## Assignment 2 - AST Generation
+
+### Required Tasks to Complete
+
+1. **Study the AST Node Structure**
+   - Read carefully all node classes in `src/utils/nodes.py`
+   - Understand the AST node hierarchy and their properties
+   - Master how different language constructs map to AST nodes
+
+2. **Implement the ASTGeneration Class**
+   - Create a class `ASTGeneration` in `src/astgen/ast_generation.py`
+   - Inherit from `HLangVisitor` (generated from ANTLR4)
+   - Override visitor methods to construct appropriate AST nodes
+   - Handle all language constructs defined in the HLang specification
+
+3. **Write 100 AST Generation Test Cases**
+   - Implement **100 test cases** in `tests/test_ast_gen.py`
+   - Test AST generation for all language features
+   - Verify correct node types and structure
+   - Test edge cases and complex nested structures
+
+### AST Generation Requirements
+
+The `ASTGeneration` class must:
+- **Inherit from HLangVisitor**: Use the visitor pattern to traverse parse trees
+- **Return AST nodes**: Each visit method should return appropriate node objects from `nodes.py`
+- **Handle all constructs**: Support all language features defined in the grammar
+- **Maintain structure**: Preserve the logical structure and relationships between language elements
+
+### Evaluation Criteria
+
+- **AST Implementation**: Correctness and completeness of the `ASTGeneration` class
+- **Node Usage**: Proper utilization of node classes from `nodes.py`
+- **Test Coverage**: Quality and comprehensiveness of 100 AST generation test cases
+- **Structure Accuracy**: AST must correctly represent the source program structure
+
+## Assignment 3 - Static Semantic Analysis
+
+### Required Tasks to Complete
+
+1. **Study Semantic Constraints and Error Types**
+   - Read carefully all semantic rules in `semantic_constraints_and_errors.md`
+   - Understand the comprehensive error detection requirements
+   - Master the type system and scope management rules
+
+2. **Implement the Static Checker**
+   - Create a class `StaticChecker` in `src/semantics/static_checker.py`
+   - Inherit from `ASTVisitor` for traversing AST nodes
+   - Implement comprehensive semantic analysis for all language features
+   - Handle scope management, type checking, and error detection
+
+3. **Write 100 Static Checker Test Cases**
+   - Implement **100 test cases** in `tests/test_checker.py`
+   - Test all semantic error types and valid programs
+   - Cover edge cases and complex semantic scenarios
+   - Verify correct error messages and program validation
+
+### Semantic Analysis Requirements
+
+📋 **For detailed semantic constraints, see [Semantic Constraints and Errors](semantic_constraints_and_errors.md)**
+
+### Evaluation Criteria
+
+- **Semantic Analysis**: Correctness and completeness of the `StaticChecker` implementation
+- **Error Detection**: Accurate identification of all required error types
+- **Test Coverage**: Quality and comprehensiveness of 100 semantic checker test cases
+- **Type System**: Proper implementation of HLang's static type system
+- **Scope Management**: Correct handling of variable and function scope rules
+
+---
 
 ## Project Structure
 
@@ -36,12 +150,27 @@ The project demonstrates fundamental concepts of compiler construction including
 │   └── antlr-4.13.2-complete.jar # ANTLR4 tool
 ├── reports/              # Automated test reports (HTML format)
 │   ├── lexer/            # Lexer test reports with coverage
-│   └── parser/           # Parser test reports with coverage
+│   ├── parser/           # Parser test reports with coverage
+│   ├── ast/              # AST generation test reports with coverage
+│   └── checker/          # Semantic checker test reports with coverage
 ├── src/                  # Source code
+│   ├── astgen/           # AST generation module
+│   │   ├── __init__.py   # Package initialization
+│   │   └── ast_generation.py # ASTGeneration class implementation
+│   ├── semantics/        # Semantic analysis module
+│   │   ├── __init__.py   # Package initialization
+│   │   ├── static_checker.py # StaticChecker class implementation
+│   │   └── static_error.py   # Semantic error definitions
+│   ├── utils/            # Utility modules
+│   │   ├── __init__.py   # Package initialization  
+│   │   ├── nodes.py      # AST node class definitions
+│   │   └── visitor.py    # Base visitor classes
 │   └── grammar/          # Grammar definitions
 │       ├── HLang.g4      # ANTLR4 grammar specification
 │       └── lexererr.py   # Custom lexer error classes
 └── tests/                # Comprehensive test suite
+    ├── test_ast_gen.py   # AST generation tests
+    ├── test_checker.py   # Semantic analysis tests
     ├── test_lexer.py     # Lexer functionality tests
     ├── test_parser.py    # Parser functionality tests
     └── utils.py          # Testing utilities and helper classes
@@ -116,13 +245,16 @@ The project includes a comprehensive Makefile that supports:
    ```bash
    make test-lexer   # Test lexical analysis
    make test-parser  # Test syntax analysis
+   make test-ast     # Test AST generation
    # OR using the entrypoint script:
    # Windows:
    python run.py test-lexer
    python run.py test-parser
+   python run.py test-ast
    # macOS/Linux:
    python3 run.py test-lexer
    python3 run.py test-parser
+   python3 run.py test-ast
    ```
 
 ### Available Commands
@@ -140,6 +272,7 @@ python run.py setup        # Setup environment
 python run.py build        # Build compiler
 python run.py test-lexer   # Test lexer
 python run.py test-parser  # Test parser
+python run.py test-ast     # Test AST generation
 python run.py clean        # Clean build files
 
 # macOS/Linux:
@@ -148,6 +281,7 @@ python3 run.py setup       # Setup environment
 python3 run.py build       # Build compiler
 python3 run.py test-lexer  # Test lexer
 python3 run.py test-parser # Test parser
+python3 run.py test-ast    # Test AST generation
 python3 run.py clean       # Clean build files
 ```
 
@@ -168,6 +302,8 @@ python3 run.py clean       # Clean build files
 #### Testing Commands  
 - `make test-lexer` or `python run.py test-lexer` (Windows) / `python3 run.py test-lexer` (macOS/Linux) - Run lexer tests with HTML report generation
 - `make test-parser` or `python run.py test-parser` (Windows) / `python3 run.py test-parser` (macOS/Linux) - Run parser tests with HTML report generation
+- `make test-ast` or `python run.py test-ast` (Windows) / `python3 run.py test-ast` (macOS/Linux) - Run AST generation tests with HTML report generation
+- `make test-checker` or `python run.py test-checker` (Windows) / `python3 run.py test-checker` (macOS/Linux) - Run semantic checker tests with HTML report generation
 
 #### Maintenance Commands
 - `make clean` or `python run.py clean` (Windows) / `python3 run.py clean` (macOS/Linux) - Remove build directories
@@ -187,7 +323,9 @@ The project includes a comprehensive testing framework with:
 
 ### Test Files
 - `tests/test_lexer.py` - Lexical analysis tests
-- `tests/test_parser.py` - Syntax analysis tests  
+- `tests/test_parser.py` - Syntax analysis tests
+- `tests/test_ast_gen.py` - AST generation tests
+- `tests/test_checker.py` - Semantic analysis tests
 - `tests/utils.py` - Testing utilities and helper classes
 
 ### Running Tests
@@ -212,18 +350,40 @@ python run.py test-parser
 # macOS/Linux:
 python3 run.py test-parser
 
+# Run AST generation tests
+make test-ast
+# OR
+# Windows:
+python run.py test-ast
+# macOS/Linux:
+python3 run.py test-ast
+
+# Run semantic checker tests
+make test-checker
+# OR
+# Windows:
+python run.py test-checker
+# macOS/Linux:
+python3 run.py test-checker
+
 # View reports
 # Windows:
 start reports/lexer/index.html
 start reports/parser/index.html
+start reports/ast/index.html
+start reports/checker/index.html
 
 # macOS:
 open reports/lexer/index.html
 open reports/parser/index.html
+open reports/ast/index.html
+open reports/checker/index.html
 
 # Linux:
 xdg-open reports/lexer/index.html
 xdg-open reports/parser/index.html
+xdg-open reports/ast/index.html
+xdg-open reports/checker/index.html
 ```
 
 ### Test Report Features
@@ -250,9 +410,13 @@ Syntax Analysis (HLangParser)
     ↓
 Parse Tree
     ↓
-[Future: AST Generation]
+AST Generation (ASTGeneration) ← Assignment 2
     ↓
-[Future: Semantic Analysis]
+Abstract Syntax Tree (AST)
+    ↓
+Semantic Analysis (StaticChecker) ← Assignment 3
+    ↓
+Semantically Validated AST
     ↓
 [Future: Code Generation]
 ```
