@@ -75,7 +75,6 @@ if_stmt: IF LP expr RP body (ELSE else_stmt)?;
 else_stmt: if_stmt | body;
 
 assignment: lhs ASSIGN expr SEMICOLON;
-
 lhs: ID lhs_tail;
 lhs_tail: LSP expr RSP lhs_tail | ;
 
@@ -84,16 +83,28 @@ returnstmt: RETURN expr? SEMICOLON;
 exprstmt: expr SEMICOLON;
 
 // ------------------ Expressions ------------------
+// expr: expr1;
+// expr1: expr1 OR expr2 | expr2;
+// expr2: expr2 AND expr3 | expr3;
+// expr3: expr3 (EQUAL | UNEQUAL) expr4 | expr4;
+// expr4: expr4 (LT | LTE | GT | GTE) expr5 | expr5;
+// expr5: expr5 (ADD | SUB) expr6 | expr6;
+// expr6: expr6 (MUL | DIV | MOD) expr7 | expr7;
+// expr7: expr7 PIPELINE expr8 | expr8;
+// expr8: (NOT | SUB | ADD) expr8 | expr9;
+// expr9: primary_expr expr9_tail;
+// expr9_tail: LSP expr RSP expr9_tail | ;
+
 expr: expr1;
-expr1: expr1 OR expr2 | expr2;
-expr2: expr2 AND expr3 | expr3;
-expr3: expr3 (EQUAL | UNEQUAL) expr4 | expr4;
-expr4: expr4 (LT | LTE | GT | GTE) expr5 | expr5;
-expr5: expr5 (ADD | SUB) expr6 | expr6;
-expr6: expr6 (MUL | DIV | MOD) expr7 | expr7;
-expr7: expr7 PIPELINE expr8 | expr8;
-expr8: (NOT | SUB | ADD) expr8 | expr9;
-expr9: primary_expr expr9_tail;
+expr1: expr2;
+expr2: expr2 PIPELINE expr3 | expr3;
+expr3: expr3 OR expr4 | expr4;
+expr4: expr4 AND expr5 | expr5;
+expr5: expr5 (EQUAL | UNEQUAL) expr6 | expr6;
+expr6: expr6 (LT | LTE | GT | GTE) expr7 | expr7;
+expr7: expr7 (ADD | SUB) expr8 | expr8;
+expr8: expr8 (MUL | DIV | MOD) expr9 | expr9;
+expr9: (NOT | SUB | ADD) expr9 | primary_expr expr9_tail;
 expr9_tail: LSP expr RSP expr9_tail | ;
 
 primary_expr
