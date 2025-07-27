@@ -64,3 +64,94 @@ func main() -> void {
 """
     expected = "Must In Loop: BreakStmt()"
     assert Checker(source).check_from_source() == expected
+
+def test_007():
+    """Test undeclared function error"""
+    source = """
+func foo() -> void {}
+func main() -> void {
+    foo();
+    goo();
+};
+"""
+    expected = "Undeclared Function: goo"
+    assert Checker(source).check_from_source() == expected
+
+def test_008():
+    """Test undeclared function error with multiple calls"""
+    source = """
+func main() -> void {
+    let x = input();
+    let y = input1();
+};
+"""
+    expected = "Undeclared Function: input1"
+    assert Checker(source).check_from_source() == expected
+
+def test_025():
+    """Test redeclared parameter in function"""
+    source = """
+const a = 1;
+func goo(a: int, b: string) -> void {}
+func foo(c: int, b: string, c: float) -> void {}
+func main() -> void {}
+"""
+    expected = "Redeclared Parameter: c"
+    assert Checker(source).check_from_source() == expected
+
+def test_030():
+    """Test redeclared variable in inner block"""
+    source = """
+const a = 1;
+func main() -> void {
+    let a = 1;
+    let b = 1;
+    {
+        let a = 2;
+        let a = 1;
+    }
+};
+"""
+    expected = "Redeclared Variable: a"
+    assert Checker(source).check_from_source() == expected
+
+def test_032():
+    """Test valid use of break and continue inside loops"""
+    source = """
+func main() -> void {
+    while(true){
+        break;
+        let a = 1;
+        for(a in [1]){
+            break;
+        }
+        {
+            continue;
+        }
+        break;
+    }
+};
+"""
+    expected = "Static checking passed"
+    assert Checker(source).check_from_source() == expected
+
+def test_049():
+    """Test assignment to undeclared identifier"""
+    source = """
+func main() -> void {
+    a = 1;
+};
+"""
+    expected = "Undeclared Identifier: a"
+    assert Checker(source).check_from_source() == expected
+
+def test_052():
+    """Test assignment to function name"""
+    source = """
+const foo = 1;
+func main() -> void {
+    main = 1;
+};
+"""
+    expected = "Undeclared Identifier: main"
+    assert Checker(source).check_from_source() == expected
