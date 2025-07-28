@@ -155,3 +155,25 @@ func main() -> void {
 """
     expected = "Undeclared Identifier: main"
     assert Checker(source).check_from_source() == expected
+
+def test_054():
+    """Test recursive call to main (should be undeclared in its own body)"""
+    source = """
+func main() -> void {
+    main();
+};
+"""
+    expected = "Undeclared Function: main"
+    assert Checker(source).check_from_source() == expected
+
+def test_073():
+    """Test type mismatch in reassignment with different literal types"""
+    source = """
+func main() -> void {
+    let a = 1;
+    a = 2;
+    a = 1.0;
+};
+"""
+    expected = "Type Mismatch In Statement: Assignment(IdLValue(\"a\"), FloatLiteral(1.0))"
+    assert Checker(source).check_from_source() == expected

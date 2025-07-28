@@ -145,7 +145,9 @@ class StaticChecker(ASTVisitor):
         if not self.compare_types(value_type, declared_type):
             raise TypeMismatchInStatement(node)
 
-        return Symbol(node.name, declared_type)
+        sym = Symbol(node.name, declared_type)
+        param[0].insert(0, sym)  # ⚠️ Thêm biến vào scope ngay lập tức
+        return sym
     
     def visit_assignment(self, node: 'Assignment', param: List[List['Symbol']]) -> None:
         #! Kiểm tra lvalue có phải const không và có được khai báo không
@@ -242,6 +244,11 @@ class StaticChecker(ASTVisitor):
         self.visit(node.else_stmt, param)
 
     def visit_expr_stmt(self, node: 'ExprStmt', param: List[List['Symbol']]) -> None:
+        # ⛔ Check self-call nếu là FunctionCall
+        if isinstance(node.expr, FunctionCall):
+            if self.curr_function and node.expr.function.name == self.curr_function.name:
+                raise Undeclared(FunctionMarker(), node.expr.function.name)
+
         if not isinstance(node.expr, FunctionCall): 
             self.visit(node.expr, param)
             return
@@ -273,10 +280,10 @@ class StaticChecker(ASTVisitor):
 
     #! Expr -> return Type
     def visit_id_lvalue(self, node: 'IdLValue', param: List[List['Symbol']]) -> Type:
-        #! Tìm kiếm xem biến nào được khai báo gần nhất
-        res: Optional['Symbol'] = next(filter(None, map(lambda item_list: self.lookup(node.name, item_list, lambda x: x.name), param)), True)
-        if res and isinstance(res.typ, FunctionType):
-            return res.typ
+        for scope in param:
+            symbol = self.lookup(node.name, scope, lambda x: x.name)
+            if symbol:
+                return symbol.typ
         raise Undeclared(IdentifierMarker(), node.name)
     
     def visit_identifier(self, node: 'Identifier', param: List[List['Symbol']]) -> Type:
@@ -326,6 +333,10 @@ class StaticChecker(ASTVisitor):
         raise TypeMismatchInExpression(node)
 
     def visit_function_call(self, node: 'FunctionCall', param: List[List['Symbol']]) -> Type:
+        # ⛔ Check self-call
+        if self.curr_function and node.function.name == self.curr_function.name:
+            raise Undeclared(FunctionMarker(), node.function.name)
+
         res: Optional['Symbol'] = next(
             filter(None, map(lambda item_list: self.lookup(node.function.name, item_list, lambda x: x.name), param)),
             None
