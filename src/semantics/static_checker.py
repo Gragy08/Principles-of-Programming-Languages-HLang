@@ -109,18 +109,16 @@ class StaticChecker(ASTVisitor):
         return Symbol(node.name, node.type_annotation or type_value, isConst=True)
     
     def visit_func_decl(self, node: 'FuncDecl', param: List[List['Symbol']]) -> Symbol:
-        # Kiểm tra redeclared trước
         if self.lookup(node.name, param[0], lambda x: x.name):
             raise Redeclared("Function", node.name)
 
-        # Khai báo function symbol ngay lập tức
+        # Sử dụng node.return_type thay vì None
         func_symbol = Symbol(node.name, FunctionType(
-            list(map(lambda item: item.param_type, node.params)), None))
+            list(map(lambda item: item.param_type, node.params)), node.return_type))
         param[0].insert(0, func_symbol)
 
         self.curr_function = node
 
-        # Phân tích body
         reduce(lambda acc, ele: [
             ([result] + acc[0]) if isinstance(result := self.visit(ele, acc), Symbol) else acc[0]
         ] + acc[1:], node.body,
@@ -129,10 +127,9 @@ class StaticChecker(ASTVisitor):
         return func_symbol
     
     def visit_param(self, node: 'Param', param: List['Symbol']) -> Symbol:
-        #! tìm kiếm tên đã được khai báo ở đâu chưa
         if self.lookup(node.name, param, lambda x: x.name):
             raise Redeclared("Parameter", node.name)
-        return Symbol(node.name, node.param_type)  
+        return Symbol(node.name, node.param_type, isConst=True)  
     
     #! Statements -> return None or Symbol (Var)
     def visit_var_decl(self, node: 'VarDecl', param: List[List['Symbol']]) -> Symbol:
@@ -194,7 +191,7 @@ class StaticChecker(ASTVisitor):
             try:
                 result = self.visit(stmt, new_param)
                 if isinstance(result, Symbol):
-                    new_scope.append(result)   # 👉 Thêm biến vào scope hiện tại (new_scope)
+                    new_scope.append(result)
             except StaticError as e:
                 last_error = e
 
@@ -219,9 +216,9 @@ class StaticChecker(ASTVisitor):
             raise TypeMismatchInStatement(node)
         #! vào vòng lặp
         self.number_loop += 1
-        reduce(lambda acc, ele: [ #! khởi tạo một biến bên trong vòng lặp với kiểu là 1 element của array
+        reduce(lambda acc, ele: [
             ([result] + acc[0]) if isinstance(result := self.visit(ele, acc), Symbol) else acc[0]
-        ] + acc[1:], node.body.statements,  [[Symbol(node.variable, type_iterable.size)]] + param)
+        ] + acc[1:], node.body.statements,  [[Symbol(node.variable, type_iterable.element_type)]] + param)
         self.number_loop -= 1
     
     def visit_break_stmt(self, node: 'BreakStmt', param: List[List['Symbol']]) -> None:
@@ -231,17 +228,18 @@ class StaticChecker(ASTVisitor):
         if self.number_loop == 0: raise MustInLoop(node)
 
     def visit_if_stmt(self, node: 'IfStmt', param: List[List['Symbol']]) -> None:
-        #! gôm tất các các điều kiện kiểm tra có phải BoolType
+        # Kiểm tra điều kiện của if và elif
         list_condition = [node.condition] + [item[0] for item in node.elif_branches]
         for condition in list_condition:
             type_condition = self.visit(condition, param)
             if not isinstance(type_condition, BoolType):
                 raise TypeMismatchInStatement(node)
-           
-        #! duyệt qua các body
+            
+        # Kiểm tra thân của if, elif và else
         self.visit(node.then_stmt, param)
-        [self.visit(item[0], param) for item in node.elif_branches]
-        self.visit(node.else_stmt, param)
+        [self.visit(item[1], param) for item in node.elif_branches]  # Sửa item[0] thành item[1]
+        if node.else_stmt:  # Kiểm tra nếu else_stmt tồn tại
+            self.visit(node.else_stmt, param)
 
     def visit_expr_stmt(self, node: 'ExprStmt', param: List[List['Symbol']]) -> None:
         # ⛔ Check self-call nếu là FunctionCall
@@ -290,6 +288,8 @@ class StaticChecker(ASTVisitor):
         for scope in param:
             symbol = self.lookup(node.name, scope, lambda x: x.name)
             if symbol:
+                if isinstance(symbol.typ, FunctionType):
+                    raise Undeclared(IdentifierMarker(), node.name)
                 return symbol.typ
         raise Undeclared(IdentifierMarker(), node.name)
     
@@ -297,35 +297,51 @@ class StaticChecker(ASTVisitor):
     def visit_array_access_lvalue(self, node, param): pass
     def visit_array_literal(self, node: 'ArrayLiteral', param: List[List['Symbol']]) -> Type:
         if not node.elements:
-            raise TypeMismatchInStatement(node)  # hoặc bạn có thể giả định kiểu cụ thể hơn
+            # Trả về ArrayType với kiểu mặc định (IntType) và kích thước 0
+            return ArrayType(IntType(), 0)
 
         element_types = [self.visit(ele, param) for ele in node.elements]
         first_type = element_types[0]
 
         for typ in element_types[1:]:
             if not self.compare_types(first_type, typ):
-                raise TypeMismatchInStatement(node)
+                raise TypeMismatchInExpression(node)
 
         return ArrayType(first_type, len(element_types))
+    
     def visit_array_type(self, node, param): pass
+
     def visit_binary_op(self, node, param): 
         left_type = self.visit(node.left, param)
         right_type = self.visit(node.right, param)
         
-        if not self.compare_types(left_type, right_type):
-            raise TypeMismatchInExpression(node)
-
         if node.operator in ['+', '-', '*', '/']:
-            if not isinstance(left_type, IntType):
+            if not (isinstance(left_type, (IntType, FloatType)) and isinstance(right_type, (IntType, FloatType))):
+                raise TypeMismatchInExpression(node)
+            return FloatType() if isinstance(left_type, FloatType) or isinstance(right_type, FloatType) else IntType()
+        
+        if node.operator == '%':
+            if not (isinstance(left_type, IntType) and isinstance(right_type, IntType)):
                 raise TypeMismatchInExpression(node)
             return IntType()
         
-        if node.operator in ['>', '<', '==', '!=']:
-            if not isinstance(left_type, IntType):
+        if node.operator in ['>', '<', '>=', '<=', '==', '!=']:
+            if not (isinstance(left_type, (IntType, FloatType, StringType, BoolType)) and 
+                    isinstance(right_type, (IntType, FloatType, StringType, BoolType))):
+                raise TypeMismatchInExpression(node)
+            if node.operator in ['>', '<', '>=', '<=']:  # Chỉ hỗ trợ IntType, FloatType, StringType
+                if not (isinstance(left_type, (IntType, FloatType, StringType)) and 
+                        isinstance(right_type, (IntType, FloatType, StringType))):
+                    raise TypeMismatchInExpression(node)
+            if isinstance(left_type, (IntType, FloatType)) and isinstance(right_type, (IntType, FloatType)):
+                return BoolType()
+            if not self.compare_types(left_type, right_type):
                 raise TypeMismatchInExpression(node)
             return BoolType()
 
         if node.operator in ['&&', '||']:
+            if not self.compare_types(left_type, right_type):
+                raise TypeMismatchInExpression(node)
             if not isinstance(left_type, BoolType):
                 raise TypeMismatchInExpression(node)
             return BoolType()
@@ -333,7 +349,6 @@ class StaticChecker(ASTVisitor):
         raise TypeMismatchInExpression(node)
 
     def visit_function_call(self, node: 'FunctionCall', param: List[List['Symbol']]) -> Type:
-        # ⛔ Check self-call
         if self.curr_function and node.function.name == self.curr_function.name:
             raise Undeclared(FunctionMarker(), node.function.name)
 
@@ -360,8 +375,31 @@ class StaticChecker(ASTVisitor):
 
         raise Undeclared(FunctionMarker(), node.function.name)
 
-    def visit_return_stmt(self, node, param): pass
-    def visit_unary_op(self, node, param): pass
+    def visit_return_stmt(self, node: 'ReturnStmt', param: List[List['Symbol']]) -> None:
+        expected_type = self.curr_function.return_type if self.curr_function else VoidType()
+
+        if node.value is None:
+            if not isinstance(expected_type, VoidType):
+                raise TypeMismatchInStatement(node)
+        else:
+            actual_type = self.visit(node.value, param)
+            if not self.compare_types(expected_type, actual_type):
+                raise TypeMismatchInStatement(node)
+        
+    def visit_unary_op(self, node: 'UnaryOp', param: List[List['Symbol']]) -> Type:
+        operand_type = self.visit(node.operand, param)
+        
+        if node.operator in ['-', '+']:
+            if not isinstance(operand_type, (IntType, FloatType)):
+                raise TypeMismatchInExpression(node)
+            return operand_type
+        
+        if node.operator == '!':
+            if not isinstance(operand_type, BoolType):
+                raise TypeMismatchInExpression(node)
+            return BoolType()
+        
+        raise TypeMismatchInExpression(node)
 
     # Literals
     def visit_integer_literal(self, node, param): return IntType()
