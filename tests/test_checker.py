@@ -327,5 +327,168 @@ func main() -> void {
     let a: [int; 1] = [];
 }
 """
-    expected = "Type Mismatch In Statement: VarDecl(a, ArrayType(int, 1), ArrayLiteral([]))"
+    expected = "Type Mismatch In Statement: VarDecl(a, [int; 1], ArrayLiteral([]))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_127():
+    source = """
+func main() -> void {
+    let a = [1,2,3,4];
+    let c: int = a[1] + a[1 * 2 + 1];
+}
+"""
+    expected = "Static checking passed"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_132():
+    source = """
+func main() -> void {
+    let a = [[1, 2], [3, 4]];
+    a[1] = [1,2];
+    a[1][1] = 1;
+    a[1] = [1,2,3];
+}
+"""
+    expected = "Type Mismatch In Statement: Assignment(ArrayAccessLValue(Identifier(a), IntegerLiteral(1)), ArrayLiteral([IntegerLiteral(1), IntegerLiteral(2), IntegerLiteral(3)]))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_149():
+    source = """
+func TIEN() -> void {}
+func main() -> void {
+    let b = TIEN();
+}
+"""
+    expected = "Type Mismatch In Expression: FunctionCall(Identifier(TIEN), [])"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_150():
+    source = """
+func TIEN() -> void {}
+func main() -> void {
+    print("a");
+    print(1);
+}
+"""
+    expected = "Type Mismatch In Statement: ExprStmt(FunctionCall(Identifier(print), [IntegerLiteral(1)]))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_154():
+    source = """
+func main() -> void {
+    1 + "A";
+}
+"""
+    expected = "Type Mismatch In Expression: BinaryOp(IntegerLiteral(1), +, StringLiteral('A'))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_160():
+    source = """
+func main() -> void {
+    print("s");
+    input();
+}
+"""
+    expected = "Type Mismatch In Statement: ExprStmt(FunctionCall(Identifier(input), []))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_165():
+    source = """
+func main() -> void {
+    let a:string = "a" + "b";
+    let b: int = "a" + "b";
+}
+"""
+    expected = "Type Mismatch In Statement: VarDecl(b, int, BinaryOp(StringLiteral('a'), +, StringLiteral('b')))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_167():
+    source = """
+func A(a: int) -> int {return 1;}
+func B(a: int, b: int) -> int {return 1;}
+func main() -> void {
+    let a: int = 1 >> C;
+}
+"""
+    expected = "Undeclared Function: C"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_171():
+    source = """
+func A(a: int) -> int {return 1;}
+func B(a: int, b: int) -> int {return 1;}
+func main() -> void {
+    let a: int = "s" >> A;
+}
+"""
+    expected = "Type Mismatch In Expression: BinaryOp(StringLiteral('s'), >>, Identifier(A))"
+    assert Checker(source).check_from_source() == str(expected)
+
+# def test_174():
+#     source = """
+# func A(a: int) -> int {return 1;}
+# func B() -> int {return 1;}
+# func main() -> void {
+#     let a: string = 1 >> str;
+#     let b: string = 1.0 >> str;
+#     let c: string = true >> str;
+#     let d: string = "1" >> print;
+# }
+# """
+#     expected = "Type Mismatch In Expression: BinaryOp(StringLiteral('1'), >>, Identifier(print))"
+#     assert Checker(source).check_from_source() == str(expected)
+
+def test_175():
+    source = """
+func A(a: int) -> int {return 1;}
+func B(a: int, b: int) -> int {return 1;}
+func main() -> void {
+    let a: int = 2 >> C(1);
+}
+"""
+    expected = "Undeclared Function: C"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_176():
+    source = """
+func A(a: int) -> int {return 1;}
+func B(a: int, b: int) -> int {return 1;}
+func main() -> void {
+    let b: int = 2 >> B(1);
+    let a: int = 2 >> B(1.0);
+}
+"""
+    expected = "Type Mismatch In Expression: BinaryOp(IntegerLiteral(2), >>, FunctionCall(Identifier(B), [FloatLiteral(1.0)]))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_184():
+    source = """
+func TIEN(a: int) -> int {return 1;}
+func main() -> void {
+    2 >> TIEN;
+}
+"""
+    expected = "Type Mismatch In Statement: ExprStmt(BinaryOp(IntegerLiteral(2), >>, Identifier(TIEN)))"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_186():
+    source = """
+func A(a: int, b: int) -> void {return ;}
+func B(a: int) -> int {return 1;}
+func main() -> void {
+    2 >> B >> A(2);
+}
+"""
+    expected = "Static checking passed"
+    assert Checker(source).check_from_source() == str(expected)
+
+def test_187():
+    source = """
+func A(a: int, b: int) -> void {return ;}
+func B(a: int) -> int {return 1;}
+func main() -> void {
+    "s" >> A(2);
+}
+"""
+    expected = "Type Mismatch In Statement: ExprStmt(BinaryOp(StringLiteral('s'), >>, FunctionCall(Identifier(A), [IntegerLiteral(2)])))"
     assert Checker(source).check_from_source() == str(expected)
