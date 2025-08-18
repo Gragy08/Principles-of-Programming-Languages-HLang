@@ -69,6 +69,28 @@ class Emitter:
         elif type_in is ClassType:
             return "L" + in_type.class_name + ";"
 
+    def get_type_descriptor(self, typ):
+        """
+        Get the type descriptor string for any given type node.
+        This is a crucial helper for multi-dimensional arrays.
+        """
+        if isinstance(typ, IntType):
+            return "I"
+        elif isinstance(typ, FloatType):
+            return "F"
+        elif isinstance(typ, BoolType):
+            return "Z"
+        elif isinstance(typ, StringType):
+            return "Ljava/lang/String;"
+        elif isinstance(typ, VoidType):
+            return "V"
+        elif isinstance(typ, ArrayType):
+            # This is the key recursive part for multi-dimensional arrays
+            return "[" + self.get_type_descriptor(typ.element_type)
+        elif isinstance(typ, ClassType):
+            return "L" + typ.class_name + ";"
+        else:
+            raise IllegalOperandException(f"Cannot get type descriptor for type: {type(typ)}")
     def get_full_type(self, in_type) -> str:
         """
         Get full type name for JVM.
@@ -90,27 +112,17 @@ class Emitter:
             return "void"
 
     def emit_push_iconst(self, in_: Union[int, str], frame) -> str:
-        """
-        Emit instruction to push integer constant onto operand stack.
-
-        Args:
-            in_: Integer value or string representation
-            frame: Frame object for stack management
-
-        Returns:
-            Generated JVM instruction string
-        """
         frame.push()
         if type(in_) is int:
             i = in_
             if i >= -1 and i <= 5:
-                return self.jvm.emitICONST(i)
+                result = self.jvm.emitICONST(i)
             elif i >= -128 and i <= 127:
-                return self.jvm.emitBIPUSH(i)
+                result = self.jvm.emitBIPUSH(i)
             elif i >= -32768 and i <= 32767:
-                return self.jvm.emitSIPUSH(i)
+                result = self.jvm.emitSIPUSH(i)
             else:
-                return self.jvm.emitLDC(str(i))
+                result = self.jvm.emitLDC(str(i))
         elif type(in_) is str:
             if in_ == "true":
                 return self.emit_push_iconst(1, frame)
@@ -118,6 +130,13 @@ class Emitter:
                 return self.emit_push_iconst(0, frame)
             else:
                 return self.emit_push_iconst(int(in_), frame)
+
+        # ✅ FIX: Ensure proper formatting
+        if not result.startswith('\t'):
+            result = '\t' + result.lstrip()
+        if not result.endswith('\n'):
+            result += '\n'
+        return result
 
     def emit_push_fconst(self, in_: str, frame) -> str:
         """
@@ -248,14 +267,14 @@ class Emitter:
             IllegalOperandException: If type is not supported
         """
         frame.push()
-        if type(in_type) is IntType:
+        if type(in_type) in (IntType, BoolType):
             return self.jvm.emitILOAD(index)
         elif type(in_type) is FloatType:
             return self.jvm.emitFLOAD(index)
         elif (
-            type(in_type) is ArrayType
-            or type(in_type) is ClassType
-            or type(in_type) is StringType
+                type(in_type) is ArrayType
+                or type(in_type) is ClassType
+                or type(in_type) is StringType
         ):
             return self.jvm.emitALOAD(index)
         else:
@@ -296,14 +315,15 @@ class Emitter:
         """
         frame.pop()
 
-        if type(in_type) is IntType:
+        # SỬA ĐỔI: Thêm 'BoolType' vào điều kiện này
+        if type(in_type) is IntType or type(in_type) is BoolType:
             return self.jvm.emitISTORE(index)
         elif type(in_type) is FloatType:
             return self.jvm.emitFSTORE(index)
         elif (
-            type(in_type) is ArrayType
-            or type(in_type) is ClassType
-            or type(in_type) is StringType
+                type(in_type) is ArrayType
+                or type(in_type) is ClassType
+                or type(in_type) is StringType
         ):
             return self.jvm.emitASTORE(index)
         else:
@@ -479,27 +499,27 @@ class Emitter:
         else:
             return self.jvm.emitFNEG()
 
-    def emit_not(self, in_, frame) -> str:
-        """
-        Generate NOT operation.
-
-        Args:
-            in_: Type of operand
-            frame: Frame object for stack management
-
-        Returns:
-            Generated JVM instruction string
-        """
-        label1 = frame.get_new_label()
-        label2 = frame.get_new_label()
-        result = list()
-        result.append(self.emit_if_true(label1, frame))
-        result.append(self.emit_push_const("true", in_, frame))
-        result.append(self.emit_goto(label2, frame))
-        result.append(self.emit_label(label1, frame))
-        result.append(self.emit_push_const("false", in_, frame))
-        result.append(self.emit_label(label2, frame))
-        return "".join(result)
+    # def emit_not(self, in_, frame) -> str:
+    #     """
+    #     Generate NOT operation.
+    #
+    #     Args:
+    #         in_: Type of operand
+    #         frame: Frame object for stack management
+    #
+    #     Returns:
+    #         Generated JVM instruction string
+    #     """
+    #     label1 = frame.get_new_label()
+    #     label2 = frame.get_new_label()
+    #     result = list()
+    #     result.append(self.emit_if_true(label1, frame))
+    #     result.append(self.emit_push_const("true", in_, frame))
+    #     result.append(self.emit_goto(label2, frame))
+    #     result.append(self.emit_label(label1, frame))
+    #     result.append(self.emit_push_const("false", in_, frame))
+    #     result.append(self.emit_label(label2, frame))
+    #     return "".join(result)
 
     def emit_add_op(self, lexeme: str, in_, frame) -> str:
         """
@@ -603,56 +623,158 @@ class Emitter:
 
     def emit_re_op(self, op: str, in_, frame) -> str:
         """
-        Emit relational operation.
+        Emit relational operation that pushes 1 (true) or 0 (false).
 
-        Args:
-            op: Operator string
-            in_: Type of operands
-            frame: Frame object for stack management
-
-        Returns:
-            Generated JVM instruction string
+        Strategy:
+          - Pop two operands (frame.pop twice).
+          - Use IF_ICMP*/IF*/FCMP + IF* to jump to label_true when relation is true.
+          - If not true: push 0 and goto end. At label_true: push 1.
         """
-        result = list()
-        label_f = frame.get_new_label()
-        label_o = frame.get_new_label()
+        result = []
+        label_true = frame.get_new_label()
+        label_end = frame.get_new_label()
 
+        # Pop operands (we'll do two pops; some JVM compare instructions also pop internally)
         frame.pop()
         frame.pop()
+
+        # Integer comparisons
         if type(in_) is IntType:
-            if op == ">":
-                result.append(self.jvm.emitIFICMPLE(label_f))
-            elif op == ">=":
-                result.append(self.jvm.emitIFICMPLT(label_f))
-            elif op == "<":
-                result.append(self.jvm.emitIFICMPGE(label_f))
-            elif op == "<=":
-                result.append(self.jvm.emitIFICMPGT(label_f))
+            if op == "==":
+                result.append(self.jvm.emitIFICMPEQ(label_true))
             elif op == "!=":
-                result.append(self.jvm.emitIFICMPEQ(label_f))
+                result.append(self.jvm.emitIFICMPNE(label_true))
+            elif op == ">":
+                result.append(self.jvm.emitIFICMPGT(label_true))
+            elif op == ">=":
+                result.append(self.jvm.emitIFICMPGE(label_true))
+            elif op == "<":
+                result.append(self.jvm.emitIFICMPLT(label_true))
+            elif op == "<=":
+                result.append(self.jvm.emitIFICMPLE(label_true))
             else:
-                result.append(self.jvm.emitIFICMPNE(label_f))
+                # fallback: treat as not equal
+                result.append(self.jvm.emitIFICMPNE(label_true))
         else:
+            # Float/double comparisons: use fcmpl then IF*
+            # fcmpl pushes -1/0/1 then IF* checks top. We'll generate fcmpl then IF* to label_true.
             result.append(self.jvm.emitFCMPL())
-            if op == ">":
-                result.append(self.jvm.emitIFLE(label_f))
-            elif op == ">=":
-                result.append(self.jvm.emitIFLT(label_f))
-            elif op == "<":
-                result.append(self.jvm.emitIFGE(label_f))
-            elif op == "<=":
-                result.append(self.jvm.emitIFGT(label_f))
+            if op == "==":
+                result.append(self.jvm.emitIFEQ(label_true))
             elif op == "!=":
-                result.append(self.jvm.emitIFEQ(label_f))
+                result.append(self.jvm.emitIFNE(label_true))
+            elif op == ">":
+                result.append(self.jvm.emitIFGT(label_true))
+            elif op == ">=":
+                result.append(self.jvm.emitIFGE(label_true))
+            elif op == "<":
+                result.append(self.jvm.emitIFLT(label_true))
+            elif op == "<=":
+                result.append(self.jvm.emitIFLE(label_true))
             else:
-                result.append(self.jvm.emitIFNE(label_f))
+                result.append(self.jvm.emitIFNE(label_true))
+
+        # If comparison did not jump to true, push 0 (false)
+        result.append(self.emit_push_const("0", IntType(), frame))
+        frame.push()  # push the boolean 0
+        result.append(self.emit_goto(label_end, frame))
+
+        # label_true: push 1 (true)
+        result.append(self.emit_label(label_true, frame))
         result.append(self.emit_push_const("1", IntType(), frame))
         frame.push()
-        result.append(self.emit_goto(label_o, frame))
-        result.append(self.emit_label(label_f, frame))
-        result.append(self.emit_push_const("0", IntType(), frame))
-        result.append(self.emit_label(label_o, frame))
+        # end label
+        result.append(self.emit_label(label_end, frame))
+
         return "".join(result)
+
+    def emit_relational_op(self, op: str, typ, frame):
+        # typ là kiểu dữ liệu của toán hạng (IntType, FloatType, StringType, v.v.)
+        # op là toán tử so sánh: "==", "!=", "<", "<=", ">", ">="
+        bytecode = ""
+        label_true = frame.get_new_label()
+        label_end = frame.get_new_label()
+
+        if isinstance(typ, FloatType):
+            # So sánh float -> trả về int (-1, 0, 1) trên stack
+            bytecode += "fcmpl\n"
+            if op == "==":
+                bytecode += f"ifeq Label{label_true}\n"
+            elif op == "!=":
+                bytecode += f"ifne Label{label_true}\n"
+            elif op == "<":
+                bytecode += f"iflt Label{label_true}\n"
+            elif op == "<=":
+                bytecode += f"ifle Label{label_true}\n"
+            elif op == ">":
+                bytecode += f"ifgt Label{label_true}\n"
+            elif op == ">=":
+                bytecode += f"ifge Label{label_true}\n"
+
+        elif isinstance(typ, StringType):
+            # So sánh chuỗi: gọi compareTo, kết quả int (-1, 0, 1)
+            bytecode += "invokevirtual java/lang/String/compareTo(Ljava/lang/String;)I\n"
+            if op == "==":
+                bytecode += f"ifeq Label{label_true}\n"
+            elif op == "!=":
+                bytecode += f"ifne Label{label_true}\n"
+            elif op == "<":
+                bytecode += f"iflt Label{label_true}\n"
+            elif op == "<=":
+                bytecode += f"ifle Label{label_true}\n"
+            elif op == ">":
+                bytecode += f"ifgt Label{label_true}\n"
+            elif op == ">=":
+                bytecode += f"ifge Label{label_true}\n"
+
+        else:
+            # Mặc định int / bool
+            if op == "==":
+                bytecode += f"if_icmpeq Label{label_true}\n"
+            elif op == "!=":
+                bytecode += f"if_icmpne Label{label_true}\n"
+            elif op == "<":
+                bytecode += f"if_icmplt Label{label_true}\n"
+            elif op == "<=":
+                bytecode += f"if_icmple Label{label_true}\n"
+            elif op == ">":
+                bytecode += f"if_icmpgt Label{label_true}\n"
+            elif op == ">=":
+                bytecode += f"if_icmpge Label{label_true}\n"
+
+        # False case
+        bytecode += "iconst_0\n"
+        bytecode += f"goto Label{label_end}\n"
+
+        # True case
+        bytecode += f"Label{label_true}:\n"
+        bytecode += "iconst_1\n"
+
+        # End label
+        bytecode += f"Label{label_end}:\n"
+
+        return bytecode
+
+    def emit_not(self, frame):
+        label_true = frame.get_new_label()
+        label_end = frame.get_new_label()
+        code = []
+        code.append(f"ifeq Label{label_true}")  # nếu false -> true
+        code.append("iconst_0")  # true -> false
+        code.append(f"goto Label{label_end}")
+        code.append(f"Label{label_true}:")
+        code.append("iconst_1")
+        code.append(f"Label{label_end}:")
+        return "\n".join(code) + "\n"
+
+    def emit_neg(self, typ, frame):
+        """Sinh bytecode để đổi dấu một giá trị trên stack."""
+        if isinstance(typ, IntType):
+            return "ineg\n"
+        elif isinstance(typ, FloatType):
+            return "fneg\n"
+        else:
+            raise IllegalOperandException(f"emit_neg not supported for type: {typ}")
 
     def emit_rel_op(
         self, op: str, in_, true_label: int, false_label: int, frame
@@ -730,8 +852,11 @@ class Emitter:
         Returns:
             Tuple of (value, type)
         """
-        if type(ast) is IntLiteral:
+        # AST node class for integer literal is IntegerLiteral (from utils.nodes)
+        if type(ast) is IntegerLiteral:
             return (str(ast.value), IntType())
+        # We can extend later for string/float/bool
+        return None
 
     def emit_if_true(self, label: int, frame) -> str:
         """
@@ -841,8 +966,17 @@ class Emitter:
         if type(in_) is IntType or type(in_) is BoolType:
             frame.pop()
             return self.jvm.emitIRETURN()
+        # ✅ FIX: Thêm trường hợp cho FloatType
+        elif type(in_) is FloatType:
+            frame.pop()
+            return self.jvm.emitFRETURN()  # Sử dụng freturn
+        # ✅ FIX: Thêm trường hợp cho StringType và ArrayType
+        elif type(in_) is StringType or type(in_) is ArrayType or type(in_) is ClassType:
+            frame.pop()
+            return self.jvm.emitARETURN()  # Sử dụng areturn
         elif type(in_) is VoidType:
             return self.jvm.emitRETURN()
+        # (Bạn có thể cần thêm các kiểu khác nếu ngôn ngữ của bạn hỗ trợ)
 
     def emit_new_array(self, lexeme: str) -> str:
         """
@@ -897,7 +1031,7 @@ class Emitter:
         result.append(self.jvm.emitSOURCE(name + ".java"))
         result.append(self.jvm.emitCLASS("public " + name))
         result.append(
-            self.jvm.emitSUPER("java/land/Object" if parent == "" else parent)
+            self.jvm.emitSUPER("java/lang/Object" if parent == "" else parent)
         )
         return "".join(result)
 
@@ -930,9 +1064,53 @@ class Emitter:
         Write generated code to file.
         """
         file = open(self.filepath, "w")
-        tmp = "".join(self.buff)
+        # print(f"[DEBUG] the current file is: {self.filepath}")
+        # print(f"[DEBUG] the current buffer is: {self.buff}")
+        # print(f"[DEBUG] the current buffer type is: {type(self.buff)}")
+        new_buff = [item for item in self.buff if item is not None]
+        # print(f"[DEBUG] the current buffer after processing is: {new_buff}")
+        tmp = "".join(new_buff)
         file.write(tmp)
         file.close()
+
+    def emit_to_string(self, typ, frame):
+        """
+        Emit code to convert a primitive type into a String.
+        """
+        if isinstance(typ, StringType):
+            return ""  # đã là string thì không cần chuyển đổi
+        elif isinstance(typ, IntType):
+            frame.pop()
+            frame.push()
+            return "\tinvokestatic io/int2str(I)Ljava/lang/String;\n"
+        elif isinstance(typ, FloatType):
+            frame.pop()
+            frame.push()
+            return "\tinvokestatic io/float2str(F)Ljava/lang/String;\n"
+        elif isinstance(typ, BoolType):
+            frame.pop()
+            frame.push()
+            return "\tinvokestatic io/bool2str(Z)Ljava/lang/String;\n"
+        elif isinstance(typ, ArrayType):
+            arr_sig = self.get_type_descriptor(typ)
+            frame.pop()
+            frame.push()
+            return f"\tinvokestatic java/util/Arrays/toString({arr_sig})Ljava/lang/String;\n"
+        else:
+            raise IllegalOperandException(f"Cannot convert {typ} to String")
+
+    def emit_concat(self, frame) -> str:
+        """
+        Emit string concatenation using java.lang.String.concat
+        """
+        frame.pop()  # pop right operand
+        frame.pop()  # pop left operand
+        frame.push()  # push concatenated string
+        # ✅ FIX: Ensure proper formatting
+        return "\tinvokevirtual java/lang/String/concat(Ljava/lang/String;)Ljava/lang/String;\n"
+
+    def emitRETURN(self, typ, frame):
+        return self.emit_return(typ, frame)
 
     def print_out(self, in_: str) -> None:
         """
