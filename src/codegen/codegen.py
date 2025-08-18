@@ -728,16 +728,18 @@ class CodeGenerator(ASTVisitor):
         else:
             raise IllegalOperandException(f"Unsupported array element type: {arr_type}")
 
+
     def visit_binary_op(self, node: "BinaryOp", o):
         frame = self._get_frame(o)
         sym = self._get_sym(o)
         op = node.operator
 
-
+        # pipeline operator >>
         if op == ">>":
             left_code, left_type = self.visit(node.left, Access(frame, sym))
             function_name = ""
             existing_args = []
+
             if isinstance(node.right, Identifier):
                 function_name = node.right.name
                 existing_args = []
@@ -746,59 +748,59 @@ class CodeGenerator(ASTVisitor):
                 existing_args = node.right.args
             else:
                 raise IllegalOperandException(
-                    f"Right operand of '>>' must be a function name or call, not {type(node.right)}")
+                    f"Right operand of '>>' must be a function name or call, not {type(node.right)}"
+                )
 
             function_symbol = next((s for s in sym if s.name == function_name), None)
             if not function_symbol or not isinstance(function_symbol.type, FunctionType):
                 raise IllegalOperandException(f"'{function_name}' is not a function.")
 
-            # In code ra trực tiếp
-            self.emit.print_out(left_code)
+            # build code
+            code = left_code
             for arg in existing_args:
                 arg_code, _ = self.visit(arg, Access(frame, sym))
-                self.emit.print_out(arg_code)
-            self.emit.print_out(
-                self.emit.emit_invoke_static(f"{self.class_name}/{function_name}", function_symbol.type, frame)
+                code += arg_code
+            code += self.emit.emit_invoke_static(
+                f"{self.class_name}/{function_name}", function_symbol.type, frame
             )
-            # Trả về chuỗi rỗng vì đã in xong
-            return "", function_symbol.type.return_type
+            return code, function_symbol.type.return_type
 
+        # boolean short-circuit &&, ||
         if op in ["&&", "||"]:
             left_code, left_type = self.visit(node.left, Access(frame, sym))
             label_check = frame.get_new_label()
             label_false = frame.get_new_label()
             label_end = frame.get_new_label()
 
-            self.emit.print_out(left_code)
+            code = left_code
             if op == "&&":
-                self.emit.print_out(self.emit.emit_if_false(label_false, frame))
+                code += self.emit.emit_if_false(label_false, frame)
                 right_code, _ = self.visit(node.right, Access(frame, sym))
-                self.emit.print_out(right_code)
-                self.emit.print_out(self.emit.emit_if_false(label_false, frame))
-                self.emit.print_out(self.emit.emit_push_iconst(1, frame))
-                self.emit.print_out(self.emit.emit_goto(label_end, frame))
+                code += right_code
+                code += self.emit.emit_if_false(label_false, frame)
+                code += self.emit.emit_push_iconst(1, frame)
+                code += self.emit.emit_goto(label_end, frame)
             else:  # op == "||"
-                self.emit.print_out(self.emit.emit_if_false(label_check, frame))
-                self.emit.print_out(self.emit.emit_push_iconst(1, frame))
-                self.emit.print_out(self.emit.emit_goto(label_end, frame))
-                self.emit.print_out(self.emit.emit_label(label_check, frame))
+                code += self.emit.emit_if_false(label_check, frame)
+                code += self.emit.emit_push_iconst(1, frame)
+                code += self.emit.emit_goto(label_end, frame)
+                code += self.emit.emit_label(label_check, frame)
                 right_code, _ = self.visit(node.right, Access(frame, sym))
-                self.emit.print_out(right_code)
-                self.emit.print_out(self.emit.emit_if_false(label_false, frame))
-                self.emit.print_out(self.emit.emit_push_iconst(1, frame))
-                self.emit.print_out(self.emit.emit_goto(label_end, frame))
+                code += right_code
+                code += self.emit.emit_if_false(label_false, frame)
+                code += self.emit.emit_push_iconst(1, frame)
+                code += self.emit.emit_goto(label_end, frame)
 
-            self.emit.print_out(self.emit.emit_label(label_false, frame))
-            self.emit.print_out(self.emit.emit_push_iconst(0, frame))
-            self.emit.print_out(self.emit.emit_label(label_end, frame))
-            # Trả về chuỗi rỗng vì đã in xong
-            return "", BoolType()
+            code += self.emit.emit_label(label_false, frame)
+            code += self.emit.emit_push_iconst(0, frame)
+            code += self.emit.emit_label(label_end, frame)
+            return code, BoolType()
 
-
+        # normal binary ops
         left_code, left_type = self.visit(node.left, Access(frame, sym))
         right_code, right_type = self.visit(node.right, Access(frame, sym))
 
-        # Xử lý nối chuỗi
+        # string concatenation
         if op == '+' and (isinstance(left_type, StringType) or isinstance(right_type, StringType)):
             def _to_string_code(code_str, in_type):
                 if isinstance(in_type, StringType):
@@ -809,7 +811,6 @@ class CodeGenerator(ASTVisitor):
                     return code_str + "invokestatic io/float2str(F)Ljava/lang/String;\n"
                 elif isinstance(in_type, BoolType):
                     return code_str + "invokestatic io/bool2str(Z)Ljava/lang/String;\n"
-                # Thêm các kiểu khác nếu cần
                 return code_str
 
             str_left_code = _to_string_code(left_code, left_type)
@@ -817,7 +818,7 @@ class CodeGenerator(ASTVisitor):
 
             return str_left_code + str_right_code + self.emit.emit_concat(frame), StringType()
 
-        # Xử lý các toán tử số học và quan hệ
+        # type promotion
         result_type = left_type
         if isinstance(left_type, IntType) and isinstance(right_type, FloatType):
             left_code += self.emit.emit_i2f(frame)
@@ -828,10 +829,8 @@ class CodeGenerator(ASTVisitor):
         elif isinstance(left_type, FloatType) and isinstance(right_type, FloatType):
             result_type = FloatType()
 
-        # Nối code của hai vế lại với nhau
         full_code = left_code + right_code
 
-        # Nối tiếp với code của toán tử
         if op in ['+', '-']:
             return full_code + self.emit.emit_add_op(op, result_type, frame), result_type
         elif op in ['*', '/']:
@@ -839,7 +838,6 @@ class CodeGenerator(ASTVisitor):
         elif op == '%':
             return full_code + self.emit.emit_mod(frame), IntType()
         elif op in ['==', '!=', '<', '<=', '>', '>=']:
-            # Lưu ý: kiểu truyền vào emit_relational_op cần là kiểu đã được promote (result_type)
             return full_code + self.emit.emit_relational_op(op, result_type, frame), BoolType()
 
         raise IllegalOperandException(f"Unsupported operator: {op}")
@@ -850,30 +848,31 @@ class CodeGenerator(ASTVisitor):
         expr_code, expr_type = self.visit(node.operand, Access(frame, sym))
         op = node.operator
 
+        self.emit.print_out(expr_code)
+
         if op == "-":
-            # Trả về code của toán hạng cùng với code phủ định
-            return expr_code + self.emit.emit_neg(expr_type, frame), expr_type
+            self.emit.print_out(self.emit.emit_neg(expr_type, frame))
+            return "", expr_type
 
         elif op == "+":
-            # Dấu cộng không làm gì cả, chỉ cần trả về code của toán hạng
-            return expr_code, expr_type
+            # Dấu cộng không ảnh hưởng, chỉ in toán hạng
+            return "", expr_type
 
         elif op == "!":
-            # Xây dựng chuỗi code cho toán tử NOT và trả về
             label_true = frame.get_new_label()
             label_end = frame.get_new_label()
 
-            code = expr_code
-            code += f"ifeq Label{label_true}\n"
-            code += "iconst_0\n"  # true -> false
-            code += f"goto Label{label_end}\n"
-            code += f"Label{label_true}:\n"
-            code += "iconst_1\n"  # false -> true
-            code += f"Label{label_end}:\n"
-            return code, BoolType()
+            self.emit.print_out(f"ifeq Label{label_true}\n")
+            self.emit.print_out("iconst_0\n")
+            self.emit.print_out(f"goto Label{label_end}\n")
+            self.emit.print_out(f"Label{label_true}:\n")
+            self.emit.print_out("iconst_1\n")
+            self.emit.print_out(f"Label{label_end}:\n")
+            return "", BoolType()
 
         else:
             raise IllegalOperandException(f"Unsupported unary operator: {op}")
+
 
     def visit_function_call(self, node: "FunctionCall", o: Access = None):
         frame = self._get_frame(o)
@@ -886,47 +885,37 @@ class CodeGenerator(ASTVisitor):
                 raise IllegalOperandException("len function requires exactly one argument")
 
             arg_code, arg_type = self.visit(node.args[0], Access(frame, sym))
+            self.emit.print_out(arg_code)
 
             if not isinstance(arg_type, ArrayType):
-                # allow also if symbol is an array reference (some implementations may accept)
-                # but safest is to raise
                 raise IllegalOperandException("len expects array argument")
 
-            code = arg_code + "arraylength\n"
-            return code, IntType()
+            self.emit.print_out("arraylength\n")
+            return "", IntType()
 
         function_symbol = next(filter(lambda x: x.name == function_name, sym), False)
-
         if not function_symbol:
             function_symbol = next(filter(lambda x: x.name == function_name, IO_SYMBOL_LIST), False)
-
         if not function_symbol:
             raise IllegalOperandException(function_name)
 
         class_name = function_symbol.value.value if isinstance(function_symbol.value, CName) else self.class_name
 
-        argument_codes = []
         for argument in node.args:
-            ac, at = self.visit(argument, Access(frame, sym))
-            argument_codes.append(ac)
+            ac, _ = self.visit(argument, Access(frame, sym))
+            self.emit.print_out(ac)
 
-        # infer return type
-        ret_type = (
-            function_symbol.type.return_type
-            if hasattr(function_symbol.type, "return_type")
-            else VoidType()
+        self.emit.print_out(
+            self.emit.emit_invoke_static(class_name + "/" + function_name, function_symbol.type, frame)
         )
 
-        # return the concatenated argument code + invoke instruction
-        invoke_code = self.emit.emit_invoke_static(class_name + "/" + function_name, function_symbol.type, frame)
-        return ("".join(argument_codes) + invoke_code), ret_type
+        ret_type = getattr(function_symbol.type, "return_type", VoidType())
+        return "", ret_type
+
 
     def visit_array_literal(self, node: "ArrayLiteral", o: Any = None):
         frame = self._get_frame(o)
         sym = self._get_sym(o)
-
-        # Bắt đầu với một chuỗi code rỗng
-        code = ""
 
         elements = getattr(node, "elements", None) or getattr(node, "value", [])
         array_size = len(elements)
@@ -934,15 +923,15 @@ class CodeGenerator(ASTVisitor):
         if array_size == 0:
             raise IllegalOperandException("Cannot infer type from empty array literal in this context")
 
-        # Xác định kiểu phần tử từ phần tử đầu tiên
-        # Note: Lời gọi visit ở đây chỉ để lấy kiểu, code trả về sẽ không được dùng
+        # lấy kiểu phần tử từ phần tử đầu tiên
         _, first_elem_type = self.visit(elements[0], Access(frame, sym))
         array_type = ArrayType(first_elem_type, array_size)
 
-        # Thêm code để đẩy kích thước mảng lên stack
+        code = ""
+        # đẩy size
         code += self.emit.emit_push_iconst(array_size, frame)
 
-        # Thêm code để tạo mảng mới, tương thích với Emitter của bạn
+        # tạo mảng
         if isinstance(first_elem_type, IntType):
             code += self.emit.emit_new_array("int")
         elif isinstance(first_elem_type, BoolType):
@@ -952,23 +941,19 @@ class CodeGenerator(ASTVisitor):
         elif isinstance(first_elem_type, StringType):
             code += "anewarray java/lang/String\n"
         elif isinstance(first_elem_type, ArrayType):
-            # Mảng đa chiều: dùng anewarray với descriptor của kiểu con
             descriptor = self.emit.get_jvm_type(first_elem_type)
             code += f"anewarray {descriptor}\n"
         else:
             raise IllegalOperandException(f"Unsupported array element type: {first_elem_type}")
 
-        # Thêm code để gán giá trị cho từng phần tử
+        # gán từng phần tử
         for idx, elem in enumerate(elements):
-            # Nhân bản tham chiếu mảng trên stack
             code += "dup\n"
-            # Đẩy chỉ số
             code += self.emit.emit_push_iconst(idx, frame)
-            # Lấy code của phần tử
-            elem_code, elem_type = self.visit(elem, Access(frame, sym))
-            code += elem_code
 
-            # Thêm lệnh store phù hợp một cách thủ công
+            elem_code, elem_type = self.visit(elem, Access(frame, sym))
+            code += elem_code  # KHÔNG print_out, chỉ concat
+
             if isinstance(elem_type, IntType):
                 code += "iastore\n"
             elif isinstance(elem_type, BoolType):
@@ -980,33 +965,31 @@ class CodeGenerator(ASTVisitor):
             else:
                 raise IllegalOperandException(f"Unsupported element type for array store: {elem_type}")
 
-        # Trả về chuỗi code hoàn chỉnh và kiểu của mảng
         return code, array_type
 
     def visit_identifier(self, node: "Identifier", o: Any = None):
         frame = self._get_frame(o)
-        sym = next((x for x in self._get_sym(o) if x.name == node.name), None)
+        sym = next((s for s in self._get_sym(o) if s.name == node.name), None)
+
         if not sym:
-            raise IllegalOperandException(node.name)
+            raise IllegalOperandException(f"Undeclared identifier: {node.name}")
 
         if isinstance(sym.value, Index):
             code = self.emit.emit_read_var(sym.name, sym.type, sym.value.value, frame)
             return code, sym.type
-        elif isinstance(sym.value, CName):
+
+        if isinstance(sym.value, CName):
             code = self.emit.emit_get_static(f"{self.class_name}/{sym.name}", sym.type, frame)
             return code, sym.type
-        else:
-            raise IllegalOperandException(node.name)
 
-    # Literals
+        raise IllegalOperandException(f"Unsupported identifier binding: {node.name}")
 
+    # --- Literals ---
     def visit_integer_literal(self, node: "IntegerLiteral", o: Any = None):
-        # push integer constant
         frame = self._get_frame(o)
         return self.emit.emit_push_iconst(node.value, frame), IntType()
 
     def visit_float_literal(self, node: "FloatLiteral", o: Any = None):
-        # push float constant
         frame = self._get_frame(o)
         return self.emit.emit_push_fconst(str(node.value), frame), FloatType()
 
