@@ -636,48 +636,46 @@ class CodeGenerator(ASTVisitor):
     def visit_expr_stmt(self, node: "ExprStmt", o: SubBody = None):
         frame = self._get_frame(o)
         sym = self._get_sym(o)
+
         code, typ = self.visit(node.expr, Access(frame, sym))
-        self.emit.print_out(code)
+        full_code = code
 
         # Nếu biểu thức trả về giá trị (không phải void), pop nó khỏi stack
         if not isinstance(typ, VoidType):
-            self.emit.print_out(self.emit.emit_pop(frame))
+            full_code += self.emit.emit_pop(frame)
 
+        self.emit.print_out(full_code)
         return o
+
 
     def visit_block_stmt(self, node: "BlockStmt", o: Any = None):
         frame = self._get_frame(o)
-        # Lấy bảng ký hiệu gốc của phạm vi cha
         original_sym = self._get_sym(o)
 
-        # 1. Bắt đầu một phạm vi mới trong Frame
+        # 1. Bắt đầu một phạm vi mới
         frame.enter_scope(False)
-
-        # Lấy các nhãn cho phạm vi mới này
         start_label = frame.get_start_label()
         end_label = frame.get_end_label()
 
-        # 2. Sinh mã cho nhãn bắt đầu phạm vi
-        self.emit.print_out(self.emit.emit_label(start_label, frame))
+        full_code = ""
+        # 2. Nhãn bắt đầu
+        full_code += self.emit.emit_label(start_label, frame)
 
-        # Tạo một môi trường mới cho phạm vi con, kế thừa các ký hiệu của cha
-        # Sử dụng [:] hoặc .copy() để tạo một bản sao, tránh ảnh hưởng đến bảng ký hiệu gốc
+        # 3. Visit các câu lệnh bên trong khối
         inner_env = SubBody(frame, original_sym[:])
-
-        # 3. Duyệt qua các câu lệnh bên trong khối, cập nhật môi trường của phạm vi con
         for stmt in node.statements:
             inner_env = self.visit(stmt, inner_env)
 
-        # 4. Sinh mã cho nhãn kết thúc phạm vi
-        self.emit.print_out(self.emit.emit_label(end_label, frame))
+        # 4. Nhãn kết thúc
+        full_code += self.emit.emit_label(end_label, frame)
 
-        # 5. Kết thúc phạm vi trong Frame
+        # 5. Kết thúc phạm vi
         frame.exit_scope()
 
-        # 6. QUAN TRỌNG: Trả về môi trường với bảng ký hiệu GỐC của phạm vi cha.
-        #    Điều này sẽ loại bỏ tất cả các biến đã được khai báo bên trong khối.
+        # 6. In code và trả về môi trường gốc
+        self.emit.print_out(full_code)
         return SubBody(frame, original_sym)
-    # Left-values
+
 
     def visit_id_lvalue(self, node: "IdLValue", o: Access = None):
         frame = self._get_frame(o)
@@ -692,25 +690,21 @@ class CodeGenerator(ASTVisitor):
         else:
             raise IllegalOperandException(node.name)
 
+
     def visit_array_access_lvalue(self, node: "ArrayAccessLValue", o: Any = None):
-        """
-        For lvalue read/write generation:
-         - For read contexts, this function should produce code that pushes array element value and returns (code, elem_type)
-         - For write contexts, visit_assignment handles storing, so this returns code that pushes arrayref and index (not storing).
-        We'll implement as read: push arrref, index, then array load.
-        """
         frame = self._get_frame(o)
         sym = self._get_sym(o)
 
-        # assume node has attributes 'array' and 'index'
+        # sinh code cho array và index
         ac, at = self.visit(node.array, Access(frame, sym))
-        self.emit.print_out(ac)
         ic, it = self.visit(node.index, Access(frame, sym))
-        self.emit.print_out(ic)
-        elem_type = at.element_type if type(at) is ArrayType else at
-        # emit array load
-        code = self.emit.emit_aload(elem_type, frame)
-        return code, elem_type
+
+        elem_type = at.element_type if isinstance(at, ArrayType) else at
+
+        # gom code
+        full_code = ac + ic + self.emit.emit_aload(elem_type, frame)
+
+        return full_code, elem_type
 
     # Expressions
     def _jvm_array_signature(self, arr_type):
