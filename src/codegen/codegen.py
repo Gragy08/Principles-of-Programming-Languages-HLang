@@ -96,75 +96,64 @@ class CodeGenerator(ASTVisitor):
         out(".limit stack 10\n.limit locals 0\n.end method\n")
 
     def generate_method(self, node: "FuncDecl", o: SubBody = None):
-        # unchanged, but set current_frame while generating the method
         frame = o.frame
-
-        prev_frame = self.current_frame
+        old_frame = self.current_frame
         self.current_frame = frame
 
-        is_init = node.name == "<init>"
-        is_main = node.name == "main"
+        is_init, is_main = node.name == "<init>", node.name == "main"
 
-        param_types = list(map(lambda x: x.param_type, node.params))
+        # Xác định tham số và kiểu trả về
         if is_main:
-            param_types = [ArrayType(StringType(), 0)]
-        return_type = node.return_type
+            param_types, return_type = [ArrayType(StringType(), 0)], VoidType()
+        else:
+            param_types = [p.param_type for p in node.params]
+            return_type = node.return_type
 
-        self.emit.print_out(
-            self.emit.emit_method(
-                node.name, FunctionType(param_types, return_type), not is_init
-            )
-        )
+        # Sinh method header
+        method_type = FunctionType(param_types, return_type)
+        self.emit.print_out(self.emit.emit_method(node.name, method_type, not is_init))
 
-        frame.enter_scope(True)
+        frame.enter_scope(is_proc=True)
+        start_lbl, end_lbl = frame.get_start_label(), frame.get_end_label()
 
-        from_label = frame.get_start_label()
-        to_label = frame.get_end_label()
-
-        # Generate code for parameters
+        # Khai báo biến cho tham số
         if is_init:
-            this_idx = frame.get_new_index()
-
+            idx_this = frame.get_new_index()
             self.emit.print_out(
-                self.emit.emit_var(
-                    this_idx, "this", ClassType(self.class_name), from_label, to_label
-                )
+                self.emit.emit_var(idx_this, "this", ClassType(self.class_name), start_lbl, end_lbl)
             )
         elif is_main:
             args_idx = frame.get_new_index()
             self.emit.print_out(
                 self.emit.emit_var(
-                    args_idx, "args", ArrayType(StringType(), 0), from_label, to_label
+                    args_idx, "args", ArrayType(StringType(), 0), start_lbl, end_lbl
                 )
             )
+            
         else:
-            o = reduce(lambda acc, cur: self.visit(cur, acc), node.params, o)
+            for prm in node.params:
+                o = self.visit(prm, o)
 
-        self.emit.print_out(self.emit.emit_label(from_label, frame))
+        self.emit.print_out(self.emit.emit_label(start_lbl, frame))
 
-        # Generate code for body
-
+        # Thân hàm
         if is_init:
-            self.emit.print_out(
-                self.emit.emit_read_var(
-                    "this", ClassType(self.class_name), this_idx, frame
-                )
-            )
+            self.emit.print_out(self.emit.emit_read_var("this", ClassType(self.class_name), idx_this, frame))
             self.emit.print_out(self.emit.emit_invoke_special(frame))
 
-        o = reduce(lambda acc, cur: self.visit(cur, acc), node.body, o)
+        for stmt in node.body:
+            o = self.visit(stmt, o)
 
-        if type(return_type) is VoidType:
+        if isinstance(return_type, VoidType):
             self.emit.print_out(self.emit.emit_return(VoidType(), frame))
 
-        self.emit.print_out(self.emit.emit_label(to_label, frame))
-
+        # Đóng method
+        self.emit.print_out(self.emit.emit_label(end_lbl, frame))
         self.emit.print_out(self.emit.emit_end_method(frame))
-
         frame.exit_scope()
 
-        # restore previous current_frame
-        self.current_frame = prev_frame
+        # Khôi phục frame cũ
+        self.current_frame = old_frame
 
     def _infer_type_from_literal(self, node, sym_table):
         # Trả về instance của Type (không emit)
