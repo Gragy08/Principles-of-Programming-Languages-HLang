@@ -35,7 +35,7 @@ HLang (Hybrid Language) is a simplified programming language designed for educat
 A HLang program consists of:
 1. Optional global constant declarations (using `const` keyword)
 2. Function declarations (including user-defined functions)
-3. A mandatory `main` function as the entry point
+3. A mandatory `main` function as the entry point. The `main` function is a `void` function and must not have any parameters.
 
 **Note:** Variable declarations (using `let` keyword) are only allowed within function bodies and cannot be declared at the global program level. Only constants can be declared globally.
 
@@ -495,7 +495,6 @@ func example() -> void {
     // Here: x = 10 (original), y is not accessible
 }
 ```
-```
 
 ---
 
@@ -591,10 +590,10 @@ Comparison expressions evaluate the relationship between two operands and always
 
 | Operator | Description | Operand Types | Result Type |
 |----------|-------------|---------------|-------------|
-| `<` | Less than | int, float, string | bool |
-| `<=` | Less than or equal | int, float, string | bool |
-| `>` | Greater than | int, float, string | bool |
-| `>=` | Greater than or equal | int, float, string | bool |
+| `<` | Less than | int, float | bool |
+| `<=` | Less than or equal | int, float | bool |
+| `>` | Greater than | int, float | bool |
+| `>=` | Greater than or equal | int, float | bool |
 
 **Comparison Semantics:**
 - **Numeric comparisons:** Follow standard mathematical ordering
@@ -1504,12 +1503,13 @@ HLang uses different parameter passing mechanisms depending on the data type, ba
 - Performance: Efficient for small data types
 
 ```hlang
-func modifyInt(x: int) -> void {
-    x = 100;  // Only modifies local parameter copy
+func printModified(x: int) -> void {
+    let y = x + 1;
+    print(y);  // Works with a copy; original value remains unchanged
 }
 
 let value = 42;
-modifyInt(value);
+printModified(value);
 // value is still 42 after function call
 ```
 
@@ -1528,24 +1528,6 @@ func processString(text: string) -> string {
 let original = "data";
 let result = processString(original);
 // original remains "data", result is "data processed"
-```
-
-**Pass-by-Reference (Arrays):**
-- Applied to: All array types `[T; N]`
-- Behavior: Passes reference to original array
-- Modifications inside function affect the original array
-- Performance: Efficient for large data structures
-
-```hlang
-func fillArray(arr: [int; 3], value: int) -> void {
-    for (i in [0, 1, 2]) {
-        arr[i] = value;  // Modifies original array
-    }
-}
-
-let numbers = [1, 2, 3];
-fillArray(numbers, 99);
-// numbers is now [99, 99, 99]
 ```
 
 ### Function Scope and Local Variables
@@ -1704,15 +1686,15 @@ print("Hello, " + name + "!");    // Output greeting
 
 **Type Conversion Functions:**
 
-HLang provides overloaded conversion functions for type transformations:
+HLang provides conversion functions for type transformations:
 
 | Function | Input Type | Output Type | Description |
 |----------|------------|-------------|-------------|
-| `str` | `int` | `string` | Convert integer to string representation |
-| `str` | `float` | `string` | Convert float to string representation |
-| `str` | `bool` | `string` | Convert boolean to string ("true" or "false") |
-| `int` | `string` | `int` | Parse string to integer (runtime error if invalid) |
-| `float` | `string` | `float` | Parse string to float (runtime error if invalid) |
+| `int2str` | `int` | `string` | Convert integer to string representation |
+| `float2str` | `float` | `string` | Convert float to string representation |
+| `bool2str` | `bool` | `string` | Convert boolean to string ("true" or "false") |
+| `str2int` | `string` | `int` | Parse string to integer (runtime error if invalid) |
+| `str2float` | `string` | `float` | Parse string to float (runtime error if invalid) |
 
 ```hlang
 // String conversion examples:
