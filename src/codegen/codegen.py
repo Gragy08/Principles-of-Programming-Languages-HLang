@@ -206,59 +206,64 @@ class CodeGenerator(ASTVisitor):
                 return t
 
     def visit_const_decl(self, node: "ConstDecl", o: Any = None):
-        sym_table = self._get_sym(o)
+        # Lấy bảng ký hiệu hiện tại
+        symbols = self._get_sym(o)
 
-        # infer type WITHOUT emitting code
-        value_type = self._infer_type_from_literal(node.value, sym_table)
+        # Suy luận kiểu từ literal (chỉ phân tích, không sinh code)
+        const_type = self._infer_type_from_literal(node.value, symbols)
 
-        # emit attribute declaration (no init)
-        self.emit.print_out(self.emit.emit_attribute(node.name, value_type, True, None))
+        # Sinh code khai báo hằng (không gán giá trị ban đầu)
+        decl = self.emit.emit_attribute(node.name, const_type, is_final=True, value=None)
+        self.emit.print_out(decl)
 
-        # add to symbol table
-        sym_table.append(Symbol(node.name, value_type, CName(self.class_name)))
+        # Thêm vào symbol table
+        symbols.append(Symbol(node.name, const_type, CName(self.class_name)))
 
-        # queue init for <clinit>
-        if not hasattr(self, "global_inits"):
-            self.global_inits = []
-        self.global_inits.append((node.name, node.value, value_type))
+        # Gom hằng lại để sau này khởi tạo trong <clinit>
+        self.global_inits = getattr(self, "global_inits", [])
+        self.global_inits.append((node.name, node.value, const_type))
 
-        return SubBody(o.frame if hasattr(o, "frame") else None, sym_table)
+        return SubBody(getattr(o, "frame", None), symbols)
+
 
     def visit_func_decl(self, node: "FuncDecl", o: SubBody = None):
-        # unchanged
-        frame = Frame(node.name, node.return_type)
-        self.generate_method(node, SubBody(frame, o.sym))
-        param_types = list(map(lambda x: x.param_type, node.params))
-        return SubBody(
-            None,
-            [
-                Symbol(
-                    node.name,
-                    FunctionType(param_types, node.return_type),
-                    CName(self.class_name),
-                )
-            ]
-            + o.sym,
+        # Mỗi hàm sẽ có frame riêng
+        func_frame = Frame(node.name, node.return_type)
+
+        # Sinh code cho thân hàm
+        self.generate_method(node, SubBody(func_frame, o.sym))
+
+        # Lấy danh sách kiểu tham số
+        param_types = [param.param_type for param in node.params]
+
+        # Trả về SubBody chứa symbol mới thêm vào
+        func_symbol = Symbol(
+            node.name,
+            FunctionType(param_types, node.return_type),
+            CName(self.class_name),
         )
+        return SubBody(None, [func_symbol] + o.sym)
+
 
     def visit_param(self, node: "Param", o: Any = None):
-        # unchanged
         frame = self._get_frame(o)
-        idx = frame.get_new_index()
-        self.emit.print_out(
-            self.emit.emit_var(
-                idx,
-                node.name,
-                node.param_type,
-                frame.get_start_label(),
-                frame.get_end_label(),
-            )
-        )
 
-        return SubBody(
-            frame,
-            [Symbol(node.name, node.param_type, Index(idx))] + o.sym,
+        # Cấp chỉ số cho biến cục bộ
+        idx = frame.get_new_index()
+
+        # Sinh code khai báo biến tham số
+        var_decl = self.emit.emit_var(
+            idx,
+            node.name,
+            node.param_type,
+            frame.get_start_label(),
+            frame.get_end_label(),
         )
+        self.emit.print_out(var_decl)
+
+        # Trả về SubBody với symbol mới
+        param_symbol = Symbol(node.name, node.param_type, Index(idx))
+        return SubBody(frame, [param_symbol] + o.sym)
 
     # Type system (simply return the node itself)
     def visit_int_type(self, node: "IntType", o: Any = None):
