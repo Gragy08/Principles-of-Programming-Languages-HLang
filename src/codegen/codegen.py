@@ -285,94 +285,89 @@ class CodeGenerator(ASTVisitor):
         return node
 
     # Statements
-
     def visit_var_decl(self, node: "VarDecl", o: SubBody = None):
         frame = self._get_frame(o)
-        sym = self._get_sym(o)
+        symbols = self._get_sym(o)
 
-        # ----- 1) Determine variable type (infer if annotation missing) -----
-        if node.type_annotation is not None:
+        # --- 1. Xác định kiểu biến ---
+        if node.type_annotation:
             var_type = node.type_annotation
         else:
-            # infer type from literal/expression WITHOUT emitting
-            # simple inference: literals, arrayliteral, identifier, arrayaccess
-            def infer_type(n):
-                if isinstance(n, IntegerLiteral):
-                    return IntType()
-                if isinstance(n, FloatLiteral):
-                    return FloatType()
-                if isinstance(n, BooleanLiteral):
-                    return BoolType()
-                if isinstance(n, StringLiteral):
-                    return StringType()
-                if isinstance(n, ArrayLiteral):
-                    elems = getattr(n, "elements", None) or getattr(n, "value", None)
-                    if not elems:
-                        raise IllegalOperandException("Cannot infer type of empty array literal")
-                    # infer element type recursively
-                    first_type = infer_type(elems[0]) if not isinstance(elems[0], Identifier) else \
-                        (next((s.type for s in sym if s.name == elems[0].name), None) or self._get_frame(
-                            o) and self.visit(elems[0], Access(Frame("<infer>", VoidType()), sym)[0]))
-                    return ArrayType(first_type, len(elems))
-                if isinstance(n, Identifier):
-                    s = next((x for x in sym if x.name == n.name), None)
-                    if not s:
-                        raise IllegalOperandException(n.name)
-                    return s.type
-                if isinstance(n, ArrayAccess):
-                    # infer array type then return element type
-                    if isinstance(n.array, Identifier):
-                        s = next((x for x in sym if x.name == n.array.name), None)
-                        if not s:
-                            raise IllegalOperandException(n.array.name)
-                        arr_type = s.type
-                    else:
-                        # fallback: try to infer recursively
-                        arr_type = infer_type(n.array)
-                    if not isinstance(arr_type, ArrayType):
-                        raise IllegalOperandException("Cannot index into non-array type")
-                    return arr_type.element_type
-                # fallback: as last resort, call visitor to get type (but this may emit)
-                _, t = self.visit(n, Access(frame, sym))
-                return t
-
             if node.value is None:
-                raise IllegalOperandException(f"Cannot infer type for variable '{node.name}' without initializer")
-            var_type = infer_type(node.value)
-
-        # ----- 2) allocate local variable slot with known type -----
-        idx = frame.get_new_index()
-        self.emit.print_out(
-            self.emit.emit_var(
-                idx,
-                node.name,
-                var_type,
-                frame.get_start_label(),
-                frame.get_end_label(),
-            )
-        )
-
-        # add symbol (so Assignment/initializer can find it)
-        new_sym = [Symbol(node.name, var_type, Index(idx))] + o.sym
-
-        # ----- 3) handle initializer (if any) -----
-        if node.value is not None:
-            # If initializer is ArrayLiteral we may handle specially (array creation + write_var)
-            if isinstance(node.value, ArrayLiteral):
-                code, typ = self.visit(node.value, Access(frame, new_sym))
-                self.emit.print_out(code)
-                self.emit.print_out(self.emit.emit_write_var(node.name, typ, idx, frame))
-            else:
-                # Use assignment visitor which expects variable symbol to exist
-                self.visit(
-                    Assignment(IdLValue(node.name), node.value),
-                    SubBody(frame, new_sym),
+                raise IllegalOperandException(
+                    f"Cannot infer type for variable '{node.name}' without initializer"
                 )
 
-        return SubBody(
-            frame,
-            new_sym,
+            def guess_type(expr):
+                if isinstance(expr, IntegerLiteral):
+                    return IntType()
+                if isinstance(expr, FloatLiteral):
+                    return FloatType()
+                if isinstance(expr, BooleanLiteral):
+                    return BoolType()
+                if isinstance(expr, StringLiteral):
+                    return StringType()
+                if isinstance(expr, ArrayLiteral):
+                    elements = getattr(expr, "elements", None) or getattr(expr, "value", None)
+                    if not elements:
+                        raise IllegalOperandException("Cannot infer type of empty array literal")
+
+                    # xác định kiểu phần tử đầu tiên
+                    first = elements[0]
+                    if isinstance(first, Identifier):
+                        sym = next((s.type for s in symbols if s.name == first.name), None)
+                        elem_type = sym or self.visit(first, Access(Frame("<infer>", VoidType()), symbols))[1]
+                    else:
+                        elem_type = guess_type(first)
+
+                    return ArrayType(elem_type, len(elements))
+                if isinstance(expr, Identifier):
+                    sym = next((s for s in symbols if s.name == expr.name), None)
+                    if not sym:
+                        raise IllegalOperandException(expr.name)
+                    return sym.type
+                if isinstance(expr, ArrayAccess):
+                    arr_t = None
+                    if isinstance(expr.array, Identifier):
+                        sym = next((s for s in symbols if s.name == expr.array.name), None)
+                        if not sym:
+                            raise IllegalOperandException(expr.array.name)
+                        arr_t = sym.type
+                    else:
+                        arr_t = guess_type(expr.array)
+                    if not isinstance(arr_t, ArrayType):
+                        raise IllegalOperandException("Cannot index into non-array type")
+                    return arr_t.element_type
+
+                # fallback: dùng visitor để lấy type (có thể phát sinh code)
+                _, t = self.visit(expr, Access(frame, symbols))
+                return t
+
+            var_type = guess_type(node.value)
+
+        # --- 2. Cấp slot cho biến ---
+        idx = frame.get_new_index()
+        var_decl = self.emit.emit_var(
+            idx, node.name, var_type, frame.get_start_label(), frame.get_end_label()
         )
+        self.emit.print_out(var_decl)
+
+        # cập nhật symbol table
+        new_symbols = [Symbol(node.name, var_type, Index(idx))] + symbols
+
+        # --- 3. Xử lý initializer ---
+        if node.value:
+            if isinstance(node.value, ArrayLiteral):
+                code, t = self.visit(node.value, Access(frame, new_symbols))
+                self.emit.print_out(code)
+                self.emit.print_out(self.emit.emit_write_var(node.name, t, idx, frame))
+            else:
+                self.visit(
+                    Assignment(IdLValue(node.name), node.value),
+                    SubBody(frame, new_symbols),
+                )
+
+        return SubBody(frame, new_symbols)
 
     def visit_array_access(self, node: "ArrayAccess", o):
         frame = self._get_frame(o)
