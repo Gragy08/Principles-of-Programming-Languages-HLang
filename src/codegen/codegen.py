@@ -371,148 +371,145 @@ class CodeGenerator(ASTVisitor):
 
     def visit_array_access(self, node: "ArrayAccess", o):
         frame = self._get_frame(o)
-        sym = self._get_sym(o)
+        symbols = self._get_sym(o)
 
-        # Lấy code cho mảng và chỉ số, nhưng KHÔNG IN
-        arr_code, arr_type = self.visit(node.array, Access(frame, sym))
-        idx_code, idx_type = self.visit(node.index, Access(frame, sym))
+        # --- 1. Lấy code cho mảng & chỉ số (chưa in) ---
+        array_code, array_type = self.visit(node.array, Access(frame, symbols))
+        index_code, index_type = self.visit(node.index, Access(frame, symbols))
 
-        # Xây dựng chuỗi code hoàn chỉnh
-        full_code = arr_code + idx_code
+        code = array_code + index_code
 
-        if not isinstance(arr_type, ArrayType):
-            raise IllegalOperandException(f"Cannot index into non-array type: {arr_type}")
+        # --- 2. Kiểm tra kiểu ---
+        if not isinstance(array_type, ArrayType):
+            raise IllegalOperandException(f"Cannot index into non-array type: {array_type}")
 
-        # SỬA ĐỔI: Tách riêng logic cho IntType và BoolType
-        inner_type = arr_type.element_type
-        if isinstance(inner_type, IntType):
-            full_code += "iaload\n"
-        elif isinstance(inner_type, BoolType):
-            full_code += "baload\n"  # Dùng baload cho mảng boolean
-        elif isinstance(inner_type, FloatType):
-            full_code += "faload\n"
-        else:  # StringType, ArrayType
-            full_code += "aaload\n"
+        elem_type = array_type.element_type
 
-        # Trả về chuỗi code và kiểu của phần tử
-        return full_code, inner_type
+        # --- 3. Sinh lệnh load phù hợp ---
+        if isinstance(elem_type, IntType):
+            code += "iaload\n"
+        elif isinstance(elem_type, BoolType):
+            code += "baload\n"
+        elif isinstance(elem_type, FloatType):
+            code += "faload\n"
+        else:  # String hoặc mảng lồng
+            code += "aaload\n"
+
+        return code, elem_type
 
     def visit_assignment(self, node: "Assignment", o: SubBody = None):
         frame = self._get_frame(o)
-        sym = self._get_sym(o)
+        symbols = self._get_sym(o)
 
-        # Xử lý gán cho phần tử mảng: a[i] = value
+        # --- 1. Trường hợp gán cho phần tử mảng ---
         if isinstance(node.lvalue, ArrayAccessLValue):
-            # Bước 1: Lấy code cho các thành phần
-            arr_code, arr_type = self.visit(node.lvalue.array, Access(frame, sym))
-            idx_code, idx_type = self.visit(node.lvalue.index, Access(frame, sym))
-            rhs_code, rhs_type = self.visit(node.value, Access(frame, sym))
+            arr_code, arr_type = self.visit(node.lvalue.array, Access(frame, symbols))
+            idx_code, idx_type = self.visit(node.lvalue.index, Access(frame, symbols))
+            rhs_code, rhs_type = self.visit(node.value, Access(frame, symbols))
 
-            # SỬA ĐỔI: Thêm logic clone() ngay tại đây, giống như đã làm ở test_101
+            # clone() nếu RHS là mảng
             if isinstance(rhs_type, ArrayType):
-                array_descriptor = self.emit.get_jvm_type(rhs_type)
-                rhs_code += f"\tinvokevirtual {array_descriptor}/clone()Ljava/lang/Object;\n"
-                rhs_code += f"\tcheckcast {array_descriptor}\n"
+                desc = self.emit.get_jvm_type(rhs_type)
+                rhs_code += f"\tinvokevirtual {desc}/clone()Ljava/lang/Object;\n"
+                rhs_code += f"\tcheckcast {desc}\n"
 
-            # Bước 2: In code ra theo đúng thứ tự: array_ref -> index -> value
+            # In theo thứ tự array_ref → index → value
             self.emit.print_out(arr_code)
             self.emit.print_out(idx_code)
             self.emit.print_out(rhs_code)
 
-            # Bước 3: In lệnh store phù hợp
-            elem_type = arr_type.element_type
-            if isinstance(elem_type, IntType):
+            # Chọn store instruction
+            etype = arr_type.element_type
+            if isinstance(etype, IntType):
                 self.emit.print_out("iastore\n")
-            elif isinstance(elem_type, BoolType):
+            elif isinstance(etype, BoolType):
                 self.emit.print_out("bastore\n")
-            elif isinstance(elem_type, FloatType):
+            elif isinstance(etype, FloatType):
                 self.emit.print_out("fastore\n")
-            else:  # String, Array
+            else:
                 self.emit.print_out("aastore\n")
 
-        # Xử lý gán cho biến thông thường: x = value
+        # --- 2. Trường hợp gán cho biến thường ---
         else:
-            rhs_code, rhs_type = self.visit(node.value, Access(frame, sym))
+            rhs_code, rhs_type = self.visit(node.value, Access(frame, symbols))
 
-            # Logic clone() cho trường hợp let b = a; (đã có từ lần sửa trước)
             if isinstance(rhs_type, ArrayType):
-                array_descriptor = self.emit.get_jvm_type(rhs_type)
-                rhs_code += f"\tinvokevirtual {array_descriptor}/clone()Ljava/lang/Object;\n"
-                rhs_code += f"\tcheckcast {array_descriptor}\n"
+                desc = self.emit.get_jvm_type(rhs_type)
+                rhs_code += f"\tinvokevirtual {desc}/clone()Ljava/lang/Object;\n"
+                rhs_code += f"\tcheckcast {desc}\n"
 
-            # In code của vế phải
             self.emit.print_out(rhs_code)
 
-            # Lấy và in code của vế trái (lệnh store)
-            lhs_code, _ = self.visit(node.lvalue, Access(frame, sym))
+            lhs_code, _ = self.visit(node.lvalue, Access(frame, symbols))
             self.emit.print_out(lhs_code)
 
         return o
 
     def visit_if_stmt(self, node: "IfStmt", o: Any = None):
         frame = self._get_frame(o)
-        sym = self._get_sym(o)
+        symbols = self._get_sym(o)
 
-        # Sinh code cho điều kiện và IN ra ngay
-        cond_code, _ = self.visit(node.condition, Access(frame, sym))
+        # --- 1. Điều kiện chính ---
+        cond_code, _ = self.visit(node.condition, Access(frame, symbols))
         self.emit.print_out(cond_code)
 
-        end_label = frame.get_new_label()
-        else_label = frame.get_new_label()
+        end_lbl = frame.get_new_label()
+        else_lbl = frame.get_new_label()
 
-        self.emit.print_out(self.emit.emit_if_false(else_label, frame))
+        self.emit.print_out(self.emit.emit_if_false(else_lbl, frame))
 
-        # Then block
+        # --- 2. Then ---
         self.visit(node.then_stmt, o)
-        self.emit.print_out(self.emit.emit_goto(end_label, frame))
+        self.emit.print_out(self.emit.emit_goto(end_lbl, frame))
 
-        self.emit.print_out(self.emit.emit_label(else_label, frame))
+        # --- 3. Elif / Else ---
+        self.emit.print_out(self.emit.emit_label(else_lbl, frame))
 
-        # Elif/Else block (giả sử AST có cấu trúc elif_branches và else_stmt)
-        if hasattr(node, 'elif_branches') and node.elif_branches:
-            # Tương tự, cần visit và print code cho điều kiện của elif
-            for condition, body in node.elif_branches:
-                next_branch_label = frame.get_new_label()
-                cond_code, _ = self.visit(condition, Access(frame, sym))
+        if getattr(node, "elif_branches", None):
+            for cond, body in node.elif_branches:
+                next_lbl = frame.get_new_label()
+                cond_code, _ = self.visit(cond, Access(frame, symbols))
                 self.emit.print_out(cond_code)
-                self.emit.print_out(self.emit.emit_if_false(next_branch_label, frame))
+                self.emit.print_out(self.emit.emit_if_false(next_lbl, frame))
                 self.visit(body, o)
-                self.emit.print_out(self.emit.emit_goto(end_label, frame))
-                self.emit.print_out(self.emit.emit_label(next_branch_label, frame))
+                self.emit.print_out(self.emit.emit_goto(end_lbl, frame))
+                self.emit.print_out(self.emit.emit_label(next_lbl, frame))
 
         if node.else_stmt:
             self.visit(node.else_stmt, o)
 
-        self.emit.print_out(self.emit.emit_label(end_label, frame))
+        # --- 4. End label ---
+        self.emit.print_out(self.emit.emit_label(end_lbl, frame))
         return o
 
     def visit_while_stmt(self, node: "WhileStmt", o: Any = None):
         frame = self._get_frame(o)
-        sym = self._get_sym(o)
+        symbols = self._get_sym(o)
 
-        cond_label = frame.get_new_label()
-        end_label = frame.get_new_label()
+        cond_lbl = frame.get_new_label()
+        end_lbl = frame.get_new_label()
 
-        prev_break_label = getattr(frame, "_break_label", None)
-        prev_continue_label = getattr(frame, "_continue_label", None)
-        frame._break_label = end_label
-        frame._continue_label = cond_label
+        # Lưu nhãn break/continue cũ
+        old_break, old_continue = getattr(frame, "_break_label", None), getattr(frame, "_continue_label", None)
+        frame._break_label, frame._continue_label = end_lbl, cond_lbl
 
-        self.emit.print_out(self.emit.emit_label(cond_label, frame))
+        # --- 1. In nhãn điều kiện ---
+        self.emit.print_out(self.emit.emit_label(cond_lbl, frame))
 
-        # Sinh code cho điều kiện và IN ra
-        cond_code, _ = self.visit(node.condition, Access(frame, sym))
+        # --- 2. Kiểm tra điều kiện ---
+        cond_code, _ = self.visit(node.condition, Access(frame, symbols))
         self.emit.print_out(cond_code)
+        self.emit.print_out(self.emit.emit_if_false(end_lbl, frame))
 
-        self.emit.print_out(self.emit.emit_if_false(end_label, frame))
+        # --- 3. Thân vòng lặp ---
+        self.visit(node.body, SubBody(frame, symbols))
+        self.emit.print_out(self.emit.emit_goto(cond_lbl, frame))
 
-        self.visit(node.body, SubBody(frame, sym))
+        # --- 4. End ---
+        self.emit.print_out(self.emit.emit_label(end_lbl, frame))
 
-        self.emit.print_out(self.emit.emit_goto(cond_label, frame))
-        self.emit.print_out(self.emit.emit_label(end_label, frame))
-
-        frame._break_label = prev_break_label
-        frame._continue_label = prev_continue_label
+        # Khôi phục break/continue cũ
+        frame._break_label, frame._continue_label = old_break, old_continue
 
         return o
 
@@ -521,25 +518,25 @@ class CodeGenerator(ASTVisitor):
         frame = self._get_frame(o)
         sym = self._get_sym(o)
 
+        full_code = ""
+
         # BƯỚC 1: Xử lý collection
         col_code, col_type = self.visit(node.iterable, Access(frame, sym))
-        self.emit.print_out(col_code)
+        full_code += col_code
 
         arr_tmp_idx = frame.get_new_index()
         arr_tmp_name = f"__arr_for_{arr_tmp_idx}"
-        self.emit.print_out(
-            self.emit.emit_var(arr_tmp_idx, arr_tmp_name, col_type, frame.get_start_label(), frame.get_end_label()))
-        self.emit.print_out(self.emit.emit_write_var(arr_tmp_name, col_type, arr_tmp_idx, frame))
+        full_code += self.emit.emit_var(arr_tmp_idx, arr_tmp_name, col_type, frame.get_start_label(), frame.get_end_label())
+        full_code += self.emit.emit_write_var(arr_tmp_name, col_type, arr_tmp_idx, frame)
 
         # BƯỚC 2: Tạo biến index tạm và khởi tạo bằng 0
         idx_tmp_idx = frame.get_new_index()
         idx_tmp_name = f"__idx_for_{idx_tmp_idx}"
-        self.emit.print_out(
-            self.emit.emit_var(idx_tmp_idx, idx_tmp_name, IntType(), frame.get_start_label(), frame.get_end_label()))
-        self.emit.print_out(self.emit.emit_push_iconst(0, frame))
-        self.emit.print_out(self.emit.emit_write_var(idx_tmp_name, IntType(), idx_tmp_idx, frame))
+        full_code += self.emit.emit_var(idx_tmp_idx, idx_tmp_name, IntType(), frame.get_start_label(), frame.get_end_label())
+        full_code += self.emit.emit_push_iconst(0, frame)
+        full_code += self.emit.emit_write_var(idx_tmp_name, IntType(), idx_tmp_idx, frame)
 
-        # BƯỚC 3: Thiết lập các label và context cho break/continue
+        # BƯỚC 3: Thiết lập label break/continue
         start_label = frame.get_new_label()
         end_label = frame.get_new_label()
         continue_target_label = frame.get_new_label()
@@ -549,91 +546,91 @@ class CodeGenerator(ASTVisitor):
         frame._break_label = end_label
         frame._continue_label = continue_target_label
 
-        # BƯỚC 4: Bắt đầu vòng lặp, kiểm tra điều kiện
-        self.emit.print_out(self.emit.emit_label(start_label, frame))
-        self.emit.print_out(self.emit.emit_read_var(idx_tmp_name, IntType(), idx_tmp_idx, frame))
-        self.emit.print_out(self.emit.emit_read_var(arr_tmp_name, col_type, arr_tmp_idx, frame))
+        # BƯỚC 4: Vòng lặp
+        full_code += self.emit.emit_label(start_label, frame)
+        full_code += self.emit.emit_read_var(idx_tmp_name, IntType(), idx_tmp_idx, frame)
+        full_code += self.emit.emit_read_var(arr_tmp_name, col_type, arr_tmp_idx, frame)
+        full_code += "arraylength\n"
+        full_code += f"if_icmpge Label{end_label}\n"
 
-        # ✅ SỬA LỖI: Sinh bytecode trực tiếp thay vì gọi helper
-        self.emit.print_out("arraylength\n")
-
-        # ✅ SỬA LỖI: Sinh bytecode trực tiếp thay vì gọi helper
-        self.emit.print_out(f"if_icmpge Label{end_label}\n")
-
-        # BƯỚC 5: Lấy phần tử, gán cho biến lặp và thêm vào symbol table
-        self.emit.print_out(self.emit.emit_read_var(arr_tmp_name, col_type, arr_tmp_idx, frame))
-        self.emit.print_out(self.emit.emit_read_var(idx_tmp_name, IntType(), idx_tmp_idx, frame))
+        # BƯỚC 5: Lấy phần tử
+        full_code += self.emit.emit_read_var(arr_tmp_name, col_type, arr_tmp_idx, frame)
+        full_code += self.emit.emit_read_var(idx_tmp_name, IntType(), idx_tmp_idx, frame)
 
         elem_type = col_type.element_type
         if isinstance(elem_type, (IntType, BoolType)):
-            self.emit.print_out("iaload\n")
+            full_code += "iaload\n"
         elif isinstance(elem_type, FloatType):
-            self.emit.print_out("faload\n")
-        else:  # String, Array, etc.
-            self.emit.print_out("aaload\n")
+            full_code += "faload\n"
+        else:
+            full_code += "aaload\n"
 
         loop_var_name = node.variable
         loop_var_idx = frame.get_new_index()
-        self.emit.print_out(
-            self.emit.emit_var(loop_var_idx, loop_var_name, elem_type, frame.get_start_label(), frame.get_end_label()))
-        self.emit.print_out(self.emit.emit_write_var(loop_var_name, elem_type, loop_var_idx, frame))
+        full_code += self.emit.emit_var(loop_var_idx, loop_var_name, elem_type, frame.get_start_label(), frame.get_end_label())
+        full_code += self.emit.emit_write_var(loop_var_name, elem_type, loop_var_idx, frame)
 
         body_sym = [Symbol(loop_var_name, elem_type, Index(loop_var_idx))] + sym
 
-        # BƯỚC 6: Visit thân vòng lặp với symbol table đã cập nhật
+        # In toàn bộ code setup trước body
+        self.emit.print_out(full_code)
+
+        # Visit thân vòng lặp
         self.visit(node.body, SubBody(frame, body_sym))
 
-        # BƯỚC 7: Cập nhật index và nhảy ngược lại
-        self.emit.print_out(self.emit.emit_label(continue_target_label, frame))
+        # BƯỚC 7: Update index
+        cont_code = ""
+        cont_code += self.emit.emit_label(continue_target_label, frame)
+        cont_code += f"iinc {idx_tmp_idx} 1\n"
+        cont_code += self.emit.emit_goto(start_label, frame)
+        cont_code += self.emit.emit_label(end_label, frame)
 
-        # ✅ SỬA LỖI: Sinh bytecode trực tiếp thay vì gọi helper
-        self.emit.print_out(f"iinc {idx_tmp_idx} 1\n")
+        self.emit.print_out(cont_code)
 
-        self.emit.print_out(self.emit.emit_goto(start_label, frame))
-
-        # BƯỚC 8: Kết thúc vòng lặp
-        self.emit.print_out(self.emit.emit_label(end_label, frame))
-
-        # Khôi phục context break/continue
+        # Restore
         frame._break_label = prev_break
         frame._continue_label = prev_continue
 
         return o
 
+
     def visit_return_stmt(self, node: "ReturnStmt", o: Any = None):
         frame = self._get_frame(o)
         sym = self._get_sym(o)
 
+        full_code = ""
         if node.value is None:
-            # return không có giá trị => void
-            self.emit.print_out(self.emit.emit_return(VoidType(), frame))
+            full_code += self.emit.emit_return(VoidType(), frame)
         else:
-            # return có giá trị => generate code cho expression
             code, typ = self.visit(node.value, Access(frame, sym))
-            # IN code của biểu thức ra tại đây
-            self.emit.print_out(code)
-            self.emit.print_out(self.emit.emit_return(typ, frame))
+            full_code += code
+            full_code += self.emit.emit_return(typ, frame)
+
+        self.emit.print_out(full_code)
+        return o
+
 
     def visit_break_stmt(self, node: "BreakStmt", o: Any = None):
         frame = self._get_frame(o)
-        # Dùng getattr để lấy nhãn một cách an toàn, trả về None nếu không có
         break_label = getattr(frame, "_break_label", None)
 
         if break_label is None:
             raise IllegalRuntimeException("break not in loop")
 
-        self.emit.print_out(self.emit.emit_goto(break_label, frame))
+        code = self.emit.emit_goto(break_label, frame)
+        self.emit.print_out(code)
         return o
+
 
     def visit_continue_stmt(self, node: "ContinueStmt", o: Any = None):
         frame = self._get_frame(o)
-        # Dùng getattr để lấy nhãn một cách an toàn
         continue_label = getattr(frame, "_continue_label", None)
 
         if continue_label is None:
             raise IllegalRuntimeException("continue not in loop")
 
-        self.emit.print_out(self.emit.emit_goto(continue_label, frame))
+        code = self.emit.emit_goto(continue_label, frame)
+        self.emit.print_out(code)
         return o
 
     def visit_expr_stmt(self, node: "ExprStmt", o: SubBody = None):
