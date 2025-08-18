@@ -129,7 +129,7 @@ class CodeGenerator(ASTVisitor):
                     args_idx, "args", ArrayType(StringType(), 0), start_lbl, end_lbl
                 )
             )
-            
+
         else:
             for prm in node.params:
                 o = self.visit(prm, o)
@@ -156,44 +156,54 @@ class CodeGenerator(ASTVisitor):
         self.current_frame = old_frame
 
     def _infer_type_from_literal(self, node, sym_table):
-        # Trả về instance của Type (không emit)
-        if isinstance(node, IntegerLiteral):
-            return IntType()
-        if isinstance(node, FloatLiteral):
-            return FloatType()
-        if isinstance(node, BooleanLiteral):
-            return BoolType()
-        if isinstance(node, StringLiteral):
-            return StringType()
-        if isinstance(node, ArrayLiteral):
-            # giả sử không rỗng — nếu rỗng thì throw
-            elems = getattr(node, "elements", None) or getattr(node, "value", None)
-            if not elems:
-                raise IllegalOperandException("Cannot infer type of empty array literal")
-            # infer type of first element (you can add checks that all elems same)
-            elem_type = self._infer_type_from_literal(elems[0], sym_table) \
-                if not isinstance(elems[0], Identifier) else \
-                (next((s.type for s in sym_table if s.name == elems[0].name), None) or self._infer_type_from_literal(
-                    elems[0], sym_table))
-            # return ArrayType(elem_type, size)
-            return ArrayType(elem_type, len(elems))
-        if isinstance(node, Identifier):
-            sym = next((s for s in sym_table if s.name == node.name), None)
+        """Trả về instance của Type dựa trên literal/identifier/array access."""
+
+        def _lookup_identifier(id_node):
+            sym = next((s for s in sym_table if s.name == id_node.name), None)
             if not sym:
-                raise IllegalOperandException(node.name)
+                raise IllegalOperandException(id_node.name)
             return sym.type
-        if isinstance(node, ArrayAccess):
-            # infer array type then return its element_type
-            arr = node.array
-            arr_type = self._infer_type_from_literal(arr, sym_table) if not isinstance(arr, Identifier) else \
-                (next((s.type for s in sym_table if s.name == arr.name), None))
-            if not isinstance(arr_type, ArrayType):
-                raise IllegalOperandException("Cannot index into non-array")
-            return arr_type.element_type
-        # fallback: as last resort, try to call visit but on a special frame that will NOT be used to emit
-        # **Better**: add more cases as needed
-        _, t = self.visit(node, Access(Frame("<infer>", VoidType()), sym_table))
-        return t
+
+        match node:
+            case IntegerLiteral():
+                return IntType()
+            case FloatLiteral():
+                return FloatType()
+            case BooleanLiteral():
+                return BoolType()
+            case StringLiteral():
+                return StringType()
+            case ArrayLiteral():
+                # Lấy danh sách phần tử, có thể lưu trong .elements hoặc .value
+                elems = getattr(node, "elements", None) or getattr(node, "value", None)
+                if not elems:
+                    raise IllegalOperandException("Cannot infer type of empty array literal")
+
+                first = elems[0]
+                if isinstance(first, Identifier):
+                    elem_type = _lookup_identifier(first)
+                else:
+                    elem_type = self._infer_type_from_literal(first, sym_table)
+
+                return ArrayType(elem_type, len(elems))
+
+            case Identifier():
+                return _lookup_identifier(node)
+
+            case ArrayAccess():
+                arr_type = (
+                    _lookup_identifier(node.array)
+                    if isinstance(node.array, Identifier)
+                    else self._infer_type_from_literal(node.array, sym_table)
+                )
+                if not isinstance(arr_type, ArrayType):
+                    raise IllegalOperandException("Cannot index into non-array")
+                return arr_type.element_type
+
+            case _:
+                # fallback: gọi visit nhưng dùng frame đặc biệt chỉ để lấy type
+                _, t = self.visit(node, Access(Frame("<infer>", VoidType()), sym_table))
+                return t
 
     def visit_const_decl(self, node: "ConstDecl", o: Any = None):
         sym_table = self._get_sym(o)
